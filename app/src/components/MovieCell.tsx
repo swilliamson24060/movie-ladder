@@ -23,12 +23,17 @@ export default function MovieCell({
   year,
   state = 'default',
   big = false,
+  small = false,
   onPress,
 }: {
   title: string;
   year: number | null;
   state?: CellState;
   big?: boolean;
+  /** Compact, fixed-width tile -- used where several cells stack (see the
+   * staircase layout in TutorialScreen's chain review), so a run of them
+   * reads as a row of steps instead of a column of full-width bars. */
+  small?: boolean;
   onPress?: () => void;
 }) {
   const accent = BORDER_COLOR[state];
@@ -39,6 +44,7 @@ export default function MovieCell({
       style={[
         styles.cell,
         big && styles.cellBig,
+        small && styles.cellSmall,
         {
           borderColor: accent,
           borderWidth: state === 'default' ? 1.5 : 2.5,
@@ -46,8 +52,13 @@ export default function MovieCell({
         },
       ]}
     >
-      <Text style={[styles.title, big && styles.titleBig]}>{title}</Text>
-      {year != null && <Text style={styles.year}>{year}</Text>}
+      <Text
+        style={[styles.title, big && styles.titleBig, small && styles.titleSmall]}
+        numberOfLines={small ? 1 : 3}
+      >
+        {title}
+      </Text>
+      {year != null && <Text style={[styles.year, small && styles.yearSmall]}>{year}</Text>}
     </View>
   );
 
@@ -69,6 +80,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 18,
   },
+  cellSmall: {
+    width: 170,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginVertical: 4,
+    borderRadius: 6,
+  },
   title: {
     color: colors.textPrimary,
     fontWeight: '700',
@@ -79,10 +97,17 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
   },
+  titleSmall: {
+    fontSize: 12,
+  },
   year: {
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
+  },
+  yearSmall: {
+    fontSize: 9,
+    marginTop: 0,
   },
 });

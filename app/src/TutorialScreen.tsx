@@ -13,6 +13,10 @@ import {
   PHASE_ORDER,
 } from './tutorial';
 
+// Horizontal offset per stacked tile in the chain review, so the stack
+// reads as a left-to-right staircase instead of a straight vertical column.
+const STAIR_STEP = 36;
+
 export default function TutorialScreen({
   game,
   onDone,
@@ -179,9 +183,8 @@ function Board({
         {[script.pulpFiction, script.killBill1, script.killBill2].map((id, i) => {
           const movie = m(id);
           return (
-            <View key={id} style={styles.chainItemWrap}>
-              {i > 0 && <Text style={styles.chainArrow}>↓</Text>}
-              <MovieCell title={movie.title} year={movie.year} state="current" />
+            <View key={id} style={{ marginLeft: i * STAIR_STEP }}>
+              <MovieCell title={movie.title} year={movie.year} state="current" small />
             </View>
           );
         })}
@@ -322,7 +325,5 @@ const styles = StyleSheet.create({
     borderColor: colors.cellBorder,
     borderRadius: 8,
   },
-  chainReview: { alignItems: 'center' },
-  chainItemWrap: { alignItems: 'center', width: '100%' },
-  chainArrow: { color: colors.textSecondary, fontSize: 16, marginVertical: 2 },
+  chainReview: { alignItems: 'flex-start' },
 });
