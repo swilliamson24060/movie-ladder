@@ -81,9 +81,9 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
   },
   cellSmall: {
-    width: 170,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    width: '20%',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
     marginVertical: 4,
     borderRadius: 6,
   },
@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   titleSmall: {
-    fontSize: 12,
+    fontSize: 9,
   },
   year: {
     color: colors.textSecondary,
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   yearSmall: {
-    fontSize: 9,
+    fontSize: 7,
     marginTop: 0,
   },
 });

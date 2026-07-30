@@ -15,7 +15,9 @@ import {
 
 // Horizontal offset per stacked tile in the chain review, so the stack
 // reads as a left-to-right staircase instead of a straight vertical column.
-const STAIR_STEP = 36;
+// Percentage of the board's width, matching MovieCell's `small` variant
+// (also 20% wide) so the steps and the tiles scale together.
+const STAIR_STEP_PERCENT = 20;
 
 export default function TutorialScreen({
   game,
@@ -183,7 +185,7 @@ function Board({
         {[script.pulpFiction, script.killBill1, script.killBill2].map((id, i) => {
           const movie = m(id);
           return (
-            <View key={id} style={{ marginLeft: i * STAIR_STEP }}>
+            <View key={id} style={{ width: '100%', marginLeft: `${i * STAIR_STEP_PERCENT}%` as any }}>
               <MovieCell title={movie.title} year={movie.year} state="current" small />
             </View>
           );
@@ -325,5 +327,5 @@ const styles = StyleSheet.create({
     borderColor: colors.cellBorder,
     borderRadius: 8,
   },
-  chainReview: { alignItems: 'flex-start' },
+  chainReview: { width: '100%' },
 });
