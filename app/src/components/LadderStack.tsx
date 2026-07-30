@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { colors } from '../theme';
 
 /**
@@ -51,11 +51,17 @@ export interface LadderMovie {
 
 export default function LadderStack({
   movies,
+  slideProgress,
 }: {
   /** In placement order: movies[0] is the starter (bottom row), the last
    * entry is the most recently placed (highest, furthest right). Extra
    * entries beyond MAX_STACK_TILES are ignored. */
   movies: (LadderMovie | null | undefined)[];
+  /** 0 = tiles sit in their normal stair position; 1 = tiles have slid down
+   * off the bottom of the board. Drive this from the caller (see App.tsx's
+   * milestone pause) to animate a completed group of 5 clearing off the
+   * board. The background grid never moves -- only the tiles layer does. */
+  slideProgress?: Animated.Value;
 }) {
   const { width: windowWidth } = useWindowDimensions();
   const [measuredWidth, setMeasuredWidth] = useState(0);
@@ -73,6 +79,20 @@ export default function LadderStack({
   const fontSize = Math.max(8, cellSize * 0.34);
 
   const placed = movies.slice(0, MAX_STACK_TILES);
+  const boardHeight = boardWidth * (GRID_ROWS / GRID_COLUMNS);
+  const tilesLayerStyle = slideProgress
+    ? {
+        transform: [
+          {
+            translateY: slideProgress.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, boardHeight],
+            }),
+          },
+        ],
+        opacity: slideProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+      }
+    : undefined;
 
   return (
     <View
@@ -87,35 +107,37 @@ export default function LadderStack({
         </View>
       ))}
 
-      {placed.map((movie, i) => {
-        if (!movie) return null;
-        const isTop = i === placed.length - 1;
-        const accent = isTop ? colors.green : colors.blue;
-        return (
-          <View
-            key={i}
-            style={[
-              styles.tile,
-              {
-                left: `${(i * STEP * 100) / GRID_COLUMNS}%`,
-                width: `${(TILE_SPAN * 100) / GRID_COLUMNS}%`,
-                top: `${((GRID_ROWS - (i + 1) * TILE_ROWS) * 100) / GRID_ROWS}%`,
-                height: `${(TILE_ROWS * 100) / GRID_ROWS}%`,
-                borderColor: accent,
-                boxShadow: `0 0 6px ${accent}` as any,
-              },
-            ]}
-          >
-            {/* Up to 3 lines: two lines cover ~99% of titles in films.csv
-                (p99 length is 42 chars), and the third catches the tail
-                without overflowing a TILE_ROWS-tall tile. Anything longer
-                still truncates with an ellipsis. */}
-            <Text numberOfLines={3} style={[styles.tileText, { fontSize }]}>
-              {movie.title}
-            </Text>
-          </View>
-        );
-      })}
+      <Animated.View style={[styles.tilesLayer, tilesLayerStyle]}>
+        {placed.map((movie, i) => {
+          if (!movie) return null;
+          const isTop = i === placed.length - 1;
+          const accent = isTop ? colors.green : colors.blue;
+          return (
+            <View
+              key={i}
+              style={[
+                styles.tile,
+                {
+                  left: `${(i * STEP * 100) / GRID_COLUMNS}%`,
+                  width: `${(TILE_SPAN * 100) / GRID_COLUMNS}%`,
+                  top: `${((GRID_ROWS - (i + 1) * TILE_ROWS) * 100) / GRID_ROWS}%`,
+                  height: `${(TILE_ROWS * 100) / GRID_ROWS}%`,
+                  borderColor: accent,
+                  boxShadow: `0 0 6px ${accent}` as any,
+                },
+              ]}
+            >
+              {/* Up to 3 lines: two lines cover ~99% of titles in films.csv
+                  (p99 length is 42 chars), and the third catches the tail
+                  without overflowing a TILE_ROWS-tall tile. Anything longer
+                  still truncates with an ellipsis. */}
+              <Text numberOfLines={3} style={[styles.tileText, { fontSize }]}>
+                {movie.title}
+              </Text>
+            </View>
+          );
+        })}
+      </Animated.View>
     </View>
   );
 }
@@ -142,6 +164,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.cellBorder,
     backgroundColor: colors.cellEmpty,
+  },
+  // Fills the grid exactly so the tiles inside keep resolving their
+  // percentage left/top/width/height against the full board, not against
+  // whatever size Animated.View would otherwise shrink-wrap to.
+  tilesLayer: {
+    ...StyleSheet.absoluteFillObject,
   },
   tile: {
     position: 'absolute',

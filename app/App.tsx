@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import connectionsData from './assets/data/connections.json';
 import { MovieLadder, Round } from './src/movieLadder';
@@ -8,6 +8,8 @@ import TutorialScreen from './src/TutorialScreen';
 import MovieCell from './src/components/MovieCell';
 import LadderStack, { MAX_STACK_TILES } from './src/components/LadderStack';
 import { colors } from './src/theme';
+
+const SLIDE_DURATION_MS = 450;
 
 // The board and round loop are real (see src/movieLadder.ts + LadderStack).
 // Strikes, scoring, and betting from CLAUDE.md section 5b are NOT built yet.
@@ -32,6 +34,12 @@ function GameScreen({ game }: { game: MovieLadder }) {
   const currentId = stack[stack.length - 1];
   const [round, setRound] = useState<Round | null>(() => game.buildRound(currentId));
   const [lastResult, setLastResult] = useState<string | null>(null);
+  // True once a group of 5 is showing, from the pick that completed it until
+  // the player taps CONTINUE -- no round is built for the 6th movie until
+  // the pause is dismissed and the slide-down finishes (CLAUDE.md section
+  // 5b's milestone scroll-off).
+  const [milestone, setMilestone] = useState(false);
+  const slideAnim = useRef(new Animated.Value(0)).current;
 
   function pick(candidateId: number) {
     if (!round) return;
@@ -47,12 +55,32 @@ function GameScreen({ game }: { game: MovieLadder }) {
 
     // The chain always advances, right or wrong (CLAUDE.md section 5b).
     const nextId = round.correctId;
-    setStack((s) =>
-      // A completed group of 5 clears off the board, leaving only the top
-      // tile to keep building from (section 5b's milestone scroll-off).
-      s.length >= MAX_STACK_TILES ? [s[s.length - 1], nextId] : [...s, nextId]
-    );
-    setRound(game.buildRound(nextId));
+    const newStack = [...stack, nextId];
+    setStack(newStack);
+
+    if (newStack.length >= MAX_STACK_TILES) {
+      // Pause on a full board rather than building the next round --
+      // continueAfterMilestone() builds it once the player has seen the
+      // completed group and the slide-down has cleared it away.
+      setRound(null);
+      setMilestone(true);
+    } else {
+      setRound(game.buildRound(nextId));
+    }
+  }
+
+  function continueAfterMilestone() {
+    Animated.timing(slideAnim, {
+      toValue: 1,
+      duration: SLIDE_DURATION_MS,
+      useNativeDriver: true,
+    }).start(() => {
+      const topId = stack[stack.length - 1];
+      setStack([topId]);
+      setRound(game.buildRound(topId));
+      setMilestone(false);
+      slideAnim.setValue(0);
+    });
   }
 
   const stackMovies = stack.map((id) => {
@@ -67,27 +95,38 @@ function GameScreen({ game }: { game: MovieLadder }) {
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <LadderStack movies={stackMovies} />
+        <LadderStack movies={stackMovies} slideProgress={slideAnim} />
 
-        <Text style={styles.label}>WHICH MOVIE CONNECTS TO THE TOP TILE?</Text>
-
-        {round ? (
-          round.candidateIds.map((id) => {
-            const m = game.movie(id);
-            return (
-              <MovieCell
-                key={id}
-                title={m.title}
-                year={m.year}
-                onPress={() => pick(id)}
-              />
-            );
-          })
+        {milestone ? (
+          <View style={styles.milestoneBanner}>
+            <Text style={styles.milestoneText}>🪜 ONE FLOOR COMPLETE!</Text>
+            <Pressable style={styles.button} onPress={continueAfterMilestone}>
+              <Text style={styles.buttonText}>CONTINUE ▶</Text>
+            </Pressable>
+          </View>
         ) : (
-          <Text style={styles.result}>Dead end — no valid round from this movie.</Text>
-        )}
+          <>
+            <Text style={styles.label}>WHICH MOVIE CONNECTS TO THE TOP TILE?</Text>
 
-        {lastResult && <Text style={styles.result}>{lastResult}</Text>}
+            {round ? (
+              round.candidateIds.map((id) => {
+                const m = game.movie(id);
+                return (
+                  <MovieCell
+                    key={id}
+                    title={m.title}
+                    year={m.year}
+                    onPress={() => pick(id)}
+                  />
+                );
+              })
+            ) : (
+              <Text style={styles.result}>Dead end — no valid round from this movie.</Text>
+            )}
+
+            {lastResult && <Text style={styles.result}>{lastResult}</Text>}
+          </>
+        )}
       </ScrollView>
     </View>
   );
@@ -127,4 +166,27 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 13,
   },
+  milestoneBanner: {
+    marginTop: 16,
+    alignItems: 'center',
+    backgroundColor: colors.headerBackground,
+    borderRadius: 10,
+    padding: 16,
+  },
+  milestoneText: {
+    color: colors.green,
+    fontWeight: '800',
+    fontSize: 16,
+    letterSpacing: 0.5,
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  button: {
+    backgroundColor: colors.pink,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  buttonText: { color: '#fff', fontWeight: '800', letterSpacing: 1 },
 });
