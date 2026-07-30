@@ -6,7 +6,7 @@ import connectionsData from './assets/data/connections.json';
 import { MovieLadder, Round } from './src/movieLadder';
 import TutorialScreen from './src/TutorialScreen';
 import MovieCell from './src/components/MovieCell';
-import LadderStack, { MAX_STACK_TILES } from './src/components/LadderStack';
+import LadderStack, { MAX_BOARD_WIDTH, MAX_STACK_TILES } from './src/components/LadderStack';
 import { formatMatches } from './src/tutorial';
 import { colors } from './src/theme';
 
@@ -240,6 +240,12 @@ const styles = StyleSheet.create({
   candidatesRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    width: '100%',
+    // Lines up with the board's own edges on a wide (computer-sized)
+    // screen instead of stretching past them -- LadderStack caps itself
+    // the same way.
+    maxWidth: MAX_BOARD_WIDTH,
+    alignSelf: 'center',
   },
   // 25% is ~75% of the ~33%-per-tile width the old flex:1/3-way-split gave
   // each candidate, spread across the row with space-between rather than

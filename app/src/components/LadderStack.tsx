@@ -39,8 +39,11 @@ const STEP = 2;
 /** Tiles in one milestone group, per CLAUDE.md section 5b. */
 export const MAX_STACK_TILES = 5;
 
-/** Board never grows past this, matching chart-ladder's own board cap. */
-const MAX_BOARD_WIDTH = 520;
+/** Board never grows past this, matching chart-ladder's own board cap.
+ * Exported so anything meant to line up with the board's edges (e.g. the
+ * candidate row below it) can share the exact same cap instead of a second
+ * hardcoded 520 that could drift out of sync. */
+export const MAX_BOARD_WIDTH = 520;
 /** Horizontal padding both screens put around the board (see the
  * `container` styles in App.tsx / TutorialScreen.tsx), used only to
  * estimate the board width before onLayout reports the real one. */

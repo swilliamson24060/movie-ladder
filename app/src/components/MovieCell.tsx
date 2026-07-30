@@ -66,7 +66,11 @@ export default function MovieCell({
   );
 
   if (!onPress) return content;
-  return <Pressable onPress={onPress}>{content}</Pressable>;
+  return (
+    <Pressable style={compact && styles.pressableCompact} onPress={onPress}>
+      {content}
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -84,9 +88,21 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
   },
   cellCompact: {
+    flex: 1,
+    justifyContent: 'center',
     paddingVertical: 10,
     paddingHorizontal: 6,
     marginVertical: 0,
+  },
+  // Applied to the Pressable itself (compact mode only), not just the
+  // View inside it -- a candidateSlot in a 3-across row gets stretched to
+  // match its tallest sibling automatically (default row cross-axis
+  // stretch), but that only makes the invisible slot taller. Without this,
+  // the Pressable -- and the bordered cell inside it -- would stay at
+  // their own short content height, leaving the visible tiles mismatched
+  // even though their containers lined up.
+  pressableCompact: {
+    flex: 1,
   },
   title: {
     color: colors.textPrimary,

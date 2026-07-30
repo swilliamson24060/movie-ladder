@@ -4,7 +4,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { MovieLadder } from './movieLadder';
 import { colors } from './theme';
 import MovieCell from './components/MovieCell';
-import LadderStack from './components/LadderStack';
+import LadderStack, { MAX_BOARD_WIDTH } from './components/LadderStack';
 import {
   buildTutorialScript,
   COPY,
@@ -270,7 +270,17 @@ const styles = StyleSheet.create({
   board: {
     marginBottom: 16,
   },
-  candidates: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+  candidates: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    width: '100%',
+    // Lines up with the board's own edges on a wide (computer-sized)
+    // screen instead of stretching past them -- LadderStack caps itself
+    // the same way.
+    maxWidth: MAX_BOARD_WIDTH,
+    alignSelf: 'center',
+  },
   // 25% is ~75% of the ~33%-per-tile width the old flex:1/3-way-split gave
   // each candidate, spread across the row with space-between rather than
   // packed edge-to-edge.
