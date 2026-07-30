@@ -1,31 +1,36 @@
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors } from '../theme';
 
 /**
- * The 5-tile milestone stack, rendered on an actual grid -- matching
- * chart-ladder's bordered-square board look (see BoardGrid.tsx in the
- * Chartcross repo) but with movie-ladder's own placement geometry, which
- * chart-ladder doesn't have (its tiles are always exactly 1x1 grid cells;
- * see GRID_SIZE/STARTER_POS in packages/engine/src/engine/board.ts).
+ * Movie-ladder's game board: a square grid of square cells that fills the
+ * available width, matching chart-ladder's board look (see BoardGrid.tsx
+ * and GRID_SIZE in the Chartcross repo, which is a 7x7 square of 1x1
+ * tiles). The placement geometry is movie-ladder's own -- chart-ladder has
+ * no multi-cell tiles and no staircase.
  *
  * Geometry (fixed spec, not tunable per-call):
- * - Grid is GRID_COLUMNS wide, one row per tile up to GRID_ROWS.
+ * - GRID_COLUMNS x GRID_ROWS square board, square cells.
  * - Tile 0 (the starter) sits on the bottom row, flush against the left
  *   edge, spanning TILE_SPAN columns.
- * - Each following tile sits one row higher and STEP columns further right
- *   than the grid's left edge (tile i: left = i * STEP, width = TILE_SPAN),
- *   so with STEP = TILE_SPAN/2 every tile overlaps exactly half of the one
- *   below it -- that's the staircase.
- * - GRID_COLUMNS = 12 exactly fits the 5th tile flush against the right
- *   edge (4*2 + 4 = 12), so a full 5-tile group fills the grid exactly.
+ * - Each later tile sits one row higher and STEP columns further from the
+ *   left edge: tile i has left = i * STEP, width = TILE_SPAN. With
+ *   STEP = TILE_SPAN / 2 each tile overlaps exactly half the one below it.
+ * - MAX_STACK_TILES = 5 tiles per group; the 5th ends flush against the
+ *   right edge (4*2 + 4 = 12 = GRID_COLUMNS), so a completed group spans
+ *   the board exactly.
  *
- * Slots not yet reached (movies[i] undefined/null for i < GRID_ROWS) render
- * as empty ghost squares -- never fabricated placeholder titles.
+ * Rows above the stack stay empty, the same way most of chart-ladder's
+ * board is unfilled cells. Slots with no movie yet are never given
+ * placeholder titles -- they simply aren't rendered.
  */
 const GRID_COLUMNS = 12;
-const GRID_ROWS = 5;
+const GRID_ROWS = 12;
 const TILE_SPAN = 4;
 const STEP = 2;
+
+/** Tiles in one milestone group, per CLAUDE.md section 5b. */
+export const MAX_STACK_TILES = 5;
 
 export interface LadderMovie {
   title: string;
@@ -35,13 +40,25 @@ export interface LadderMovie {
 export default function LadderStack({
   movies,
 }: {
-  /** In placement order: movies[0] is the starter (bottom), last is the
-   * most recently placed (top). Fewer than GRID_ROWS entries is fine --
-   * remaining rows render as empty grid squares. */
+  /** In placement order: movies[0] is the starter (bottom row), the last
+   * entry is the most recently placed (highest, furthest right). Extra
+   * entries beyond MAX_STACK_TILES are ignored. */
   movies: (LadderMovie | null | undefined)[];
 }) {
+  const [boardWidth, setBoardWidth] = useState(0);
+  const cellSize = boardWidth / GRID_COLUMNS;
+  // Scale label text off the measured cell size, the same way chart-ladder's
+  // TileChip does, so tiles stay legible on a phone and don't look lost on a
+  // wide screen.
+  const fontSize = Math.max(7, cellSize * 0.3);
+
+  const placed = movies.slice(0, MAX_STACK_TILES);
+
   return (
-    <View style={styles.grid}>
+    <View
+      style={styles.grid}
+      onLayout={(e) => setBoardWidth(e.nativeEvent.layout.width)}
+    >
       {Array.from({ length: GRID_ROWS }).map((_, r) => (
         <View key={r} style={styles.row}>
           {Array.from({ length: GRID_COLUMNS }).map((_, c) => (
@@ -50,10 +67,10 @@ export default function LadderStack({
         </View>
       ))}
 
-      {Array.from({ length: GRID_ROWS }).map((_, i) => {
-        const movie = movies[i];
+      {placed.map((movie, i) => {
         if (!movie) return null;
-        const isTop = i === movies.filter(Boolean).length - 1;
+        const isTop = i === placed.length - 1;
+        const accent = isTop ? colors.green : colors.blue;
         return (
           <View
             key={i}
@@ -64,14 +81,13 @@ export default function LadderStack({
                 width: `${(TILE_SPAN * 100) / GRID_COLUMNS}%`,
                 top: `${((GRID_ROWS - 1 - i) * 100) / GRID_ROWS}%`,
                 height: `${100 / GRID_ROWS}%`,
-                borderColor: isTop ? colors.green : colors.blue,
-                boxShadow: `0 0 6px ${isTop ? colors.green : colors.blue}` as any,
+                borderColor: accent,
+                boxShadow: `0 0 6px ${accent}` as any,
               },
             ]}
           >
-            <Text numberOfLines={1} style={styles.tileText}>
+            <Text numberOfLines={2} style={[styles.tileText, { fontSize }]}>
               {movie.title}
-              {movie.year != null ? ` (${movie.year})` : ''}
             </Text>
           </View>
         );
@@ -83,11 +99,14 @@ export default function LadderStack({
 const styles = StyleSheet.create({
   grid: {
     width: '100%',
+    // Square board, like chart-ladder's. Capped so it doesn't become an
+    // enormous square on a desktop-width window (chart-ladder caps its own
+    // board at 520px the same way).
+    maxWidth: 520,
+    alignSelf: 'center',
     aspectRatio: GRID_COLUMNS / GRID_ROWS,
     position: 'relative',
     backgroundColor: colors.boardBackground,
-    borderRadius: 8,
-    overflow: 'hidden',
   },
   row: {
     flexDirection: 'row',
@@ -107,12 +126,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.rackSlotBg,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 3,
   },
   tileText: {
     color: colors.textPrimary,
     fontWeight: '700',
-    fontSize: 11,
     textAlign: 'center',
   },
 });

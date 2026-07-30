@@ -104,16 +104,24 @@ function Board({
   game: MovieLadder;
 }) {
   const m = (id: number) => game.movie(id);
+  const asStack = (ids: number[]) =>
+    ids.map((id) => {
+      const movie = m(id);
+      return { title: movie.title, year: movie.year };
+    });
 
+  // Every phase shows the same board the real game uses, so the tutorial
+  // teaches the actual play surface rather than a stand-in diagram. Only
+  // the 3 hand-verified movies from TUTORIAL_FLOW.md are ever placed --
+  // the remaining slots of the 5-tile group stay as empty grid cells
+  // rather than inventing titles for movies 4 and 5.
   if (phase === 'intro') {
-    const cur = m(script.pulpFiction);
-    return <MovieCell title={cur.title} year={cur.year} state="current" big />;
+    return <LadderStack movies={asStack([script.pulpFiction])} />;
   }
   if (phase === 'pick-correct' || phase === 'explain-correct') {
-    const cur = m(script.pulpFiction);
     return (
       <>
-        <MovieCell title={cur.title} year={cur.year} state="current" big />
+        <LadderStack movies={asStack([script.pulpFiction])} />
         <View style={styles.candidates}>
           {[
             { id: script.killBill1, highlight: true },
@@ -135,10 +143,11 @@ function Board({
     );
   }
   if (phase === 'pick-wrong' || phase === 'explain-wrong') {
-    const cur = m(script.killBill1);
     return (
       <>
-        <MovieCell title={cur.title} year={cur.year} state="current" big />
+        {/* Kill Bill Vol. 1 was placed by the previous correct pick, so it's
+            now the top tile and Pulp Fiction sits below it. */}
+        <LadderStack movies={asStack([script.pulpFiction, script.killBill1])} />
         <View style={styles.candidates}>
           {[
             { id: script.killBill2, highlight: false },
@@ -160,15 +169,11 @@ function Board({
     );
   }
   if (phase === 'milestone' || phase === 'done') {
-    // Only 3 real movies are scripted for this tutorial (see
-    // buildTutorialScript) -- the remaining 2 slots of the 5-tile milestone
-    // grid render as empty ghost squares rather than inventing titles for
-    // movies 4 and 5.
-    const stack = [script.pulpFiction, script.killBill1, script.killBill2].map((id) => {
-      const movie = m(id);
-      return { title: movie.title, year: movie.year };
-    });
-    return <LadderStack movies={stack} />;
+    return (
+      <LadderStack
+        movies={asStack([script.pulpFiction, script.killBill1, script.killBill2])}
+      />
+    );
   }
   return null;
 }
@@ -255,10 +260,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 0.5,
   },
+  // No background/padding here -- LadderStack draws the board surface
+  // itself, and the phases that show no board (betting/strikes) should not
+  // leave an empty panel behind.
   board: {
-    backgroundColor: colors.boardBackground,
-    borderRadius: 10,
-    padding: 14,
     marginBottom: 16,
   },
   candidates: { gap: 0, marginTop: 4 },
