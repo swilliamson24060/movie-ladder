@@ -42,14 +42,23 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 # Connection types the GAME actually uses to build chains/decoys. The
-# generator still produces same_company, same_country, same_based_on, and
-# shared_title_word (they stay in connections.json's schema), but they're
-# excluded here by decision (2026-07-30): same_country was flagged as a
-# genre-style broadness risk (59.4% of films share "United States"), and
-# same_company/same_based_on/shared_title_word were judged too weak/loose
-# a signal for "these two movies are meaningfully connected." Add a type
-# back here only if that judgment changes -- it doesn't require touching
-# the generator.
+# generator still produces same_company, same_country, same_based_on,
+# shared_title_word, and same_release_year (they stay in connections.json's
+# schema), but they're excluded here by decision (2026-07-30): same_country
+# was flagged as a genre-style broadness risk (59.4% of films share "United
+# States"), same_company/same_based_on/shared_title_word were judged too
+# weak/loose a signal for "these two movies are meaningfully connected,"
+# and same_release_year was dropped because the year is printed right on
+# every candidate tile in the app (MovieCell) -- an active connection the
+# UI already displays isn't a hidden connection to spot, it's just reading
+# a number off the screen. Add a type back here only if that judgment
+# changes -- it doesn't require touching the generator.
+#
+# Verified impact of dropping same_release_year (2026-07-30): movies with
+# zero remaining active connection to anything else go from 4 (0.02%) to
+# 275 (1.6%) of the 17,009-film dataset -- those become unreachable as a
+# chain node. Small but real; not fixed here since nothing was asked for
+# beyond removing the type.
 ACTIVE_CONNECTION_TYPES = {
     "same_director",
     "shared_cast_member",
@@ -57,7 +66,6 @@ ACTIVE_CONNECTION_TYPES = {
     "same_composer",
     "same_award",
     "same_series",
-    "same_release_year",
 }
 
 

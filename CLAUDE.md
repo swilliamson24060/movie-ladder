@@ -210,25 +210,34 @@ new logic, not a config change.
 **Genre is not a connection type for films** — see section 6's "Genre tags
 may be too broad" finding. Doesn't apply to music.
 
-**Active vs. schema-only connection types (decided 2026-07-30):**
-`connections_generator.py` produces 11 connection types from `films.csv`
-(see section 9), but the game only uses 7 of them to build chains/decoys:
-`same_director`, `shared_cast_member`, `same_screenwriter`,
-`same_composer`, `same_award`, `same_series`, `same_release_year`.
-`same_company`, `same_country`, `same_based_on`, and `shared_title_word`
-stay in `connections.json`'s schema (still generated, still shipped) but
-are excluded from `round_selector.py`'s `ACTIVE_CONNECTION_TYPES` /
-`movieLadder.ts`'s equivalent set, so they never count toward "these two
-movies are connected" and never appear in the "explain" modal.
-`same_country` was already flagged as a broadness risk (section 9); the
-other three were judged too weak a signal for a satisfying "aha, they
-connect" moment (a title-word match or a shared distributor doesn't feel
-like a real connection to a player the way a shared director or actor
-does). Re-verified against `TUTORIAL_FLOW.md`'s scripted example after
-this change: Pulp Fiction → Kill Bill Vol. 1 still connects via
-director/cast/screenwriter, Kill Bill Vol. 1 → Vol. 2 still connects via
-director/cast/screenwriter/series, and both decoy pairs remain at zero
-connections -- no tutorial changes were needed.
+**Active vs. schema-only connection types (decided 2026-07-30, revised
+2026-07-30):** `connections_generator.py` produces 11 connection types
+from `films.csv` (see section 9), but the game only uses 6 of them to
+build chains/decoys: `same_director`, `shared_cast_member`,
+`same_screenwriter`, `same_composer`, `same_award`, `same_series`.
+`same_company`, `same_country`, `same_based_on`, `shared_title_word`, and
+**`same_release_year`** stay in `connections.json`'s schema (still
+generated, still shipped) but are excluded from `round_selector.py`'s
+`ACTIVE_CONNECTION_TYPES` / `movieLadder.ts`'s equivalent set, so they
+never count toward "these two movies are connected" and never appear in
+the "explain" modal. `same_country` was already flagged as a broadness
+risk (section 9); `same_company`/`same_based_on`/`shared_title_word` were
+judged too weak a signal for a satisfying "aha, they connect" moment.
+**`same_release_year` was removed later** (not part of the original
+2026-07-30 decision) because the year is printed directly on every
+candidate tile (`MovieCell`'s `year` prop) — an active connection type the
+UI already displays isn't a hidden connection for the player to spot, it's
+just reading a number off the screen, the same class of problem chart-
+ladder already solved once by removing performer names from its own
+selection tiles (section 11, commit `572d3ae`). Verified impact: movies
+with zero remaining active connection to anything else go from 4 (0.02%)
+to 275 (1.6%) of the 17,009-film dataset — those become unreachable as a
+chain node. Small but real; not addressed since nothing was asked beyond
+removing the type. Re-verified against `TUTORIAL_FLOW.md`'s scripted
+example after both changes: Pulp Fiction → Kill Bill Vol. 1 still connects
+via director/cast/screenwriter, Kill Bill Vol. 1 → Vol. 2 still connects
+via director/cast/screenwriter/series, and both decoy pairs remain at zero
+connections — no tutorial changes were needed either time.
 
 **Tutorial:** full phase-by-phase script (with real, hand-verified example
 movies) is in `TUTORIAL_FLOW.md`. Not yet implemented as an actual

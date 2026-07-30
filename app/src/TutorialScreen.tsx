@@ -270,8 +270,11 @@ const styles = StyleSheet.create({
   board: {
     marginBottom: 16,
   },
-  candidates: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  candidateSlot: { flex: 1 },
+  candidates: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+  // 25% is ~75% of the ~33%-per-tile width the old flex:1/3-way-split gave
+  // each candidate, spread across the row with space-between rather than
+  // packed edge-to-edge.
+  candidateSlot: { width: '25%' },
   panel: { marginTop: 'auto', paddingBottom: 16 },
   body: { fontSize: 15, lineHeight: 21, marginBottom: 16, color: colors.textSecondary },
   button: {

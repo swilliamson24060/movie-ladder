@@ -239,10 +239,13 @@ const styles = StyleSheet.create({
   },
   candidatesRow: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-between',
   },
+  // 25% is ~75% of the ~33%-per-tile width the old flex:1/3-way-split gave
+  // each candidate, spread across the row with space-between rather than
+  // packed edge-to-edge.
   candidateSlot: {
-    flex: 1,
+    width: '25%',
   },
   milestoneBanner: {
     marginTop: 16,
