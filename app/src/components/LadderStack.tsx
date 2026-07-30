@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { colors } from '../theme';
 
 /**
@@ -11,14 +11,18 @@ import { colors } from '../theme';
  *
  * Geometry (fixed spec, not tunable per-call):
  * - GRID_COLUMNS x GRID_ROWS square board, square cells.
- * - Tile 0 (the starter) sits on the bottom row, flush against the left
- *   edge, spanning TILE_SPAN columns.
- * - Each later tile sits one row higher and STEP columns further from the
- *   left edge: tile i has left = i * STEP, width = TILE_SPAN. With
- *   STEP = TILE_SPAN / 2 each tile overlaps exactly half the one below it.
+ * - Tiles are TILE_SPAN columns wide and TILE_ROWS rows tall. The extra
+ *   height is there so long titles ("The Lord of the Rings: The Return of
+ *   the King") can wrap to two lines and still sit centered in the tile.
+ * - Tile 0 (the starter) sits on the bottom rows, flush against the left
+ *   edge.
+ * - Each later tile sits directly on top of the one below (TILE_ROWS
+ *   higher, so they stack rather than overlap) and STEP columns further
+ *   from the left edge: tile i has left = i * STEP. With
+ *   STEP = TILE_SPAN / 2 each tile overhangs exactly half the one below.
  * - MAX_STACK_TILES = 5 tiles per group; the 5th ends flush against the
  *   right edge (4*2 + 4 = 12 = GRID_COLUMNS), so a completed group spans
- *   the board exactly.
+ *   the board's full width and its bottom 10 rows.
  *
  * Rows above the stack stay empty, the same way most of chart-ladder's
  * board is unfilled cells. Slots with no movie yet are never given
@@ -27,10 +31,18 @@ import { colors } from '../theme';
 const GRID_COLUMNS = 12;
 const GRID_ROWS = 12;
 const TILE_SPAN = 4;
+const TILE_ROWS = 2;
 const STEP = 2;
 
 /** Tiles in one milestone group, per CLAUDE.md section 5b. */
 export const MAX_STACK_TILES = 5;
+
+/** Board never grows past this, matching chart-ladder's own board cap. */
+const MAX_BOARD_WIDTH = 520;
+/** Horizontal padding both screens put around the board (see the
+ * `container` styles in App.tsx / TutorialScreen.tsx), used only to
+ * estimate the board width before onLayout reports the real one. */
+const SCREEN_PADDING = 16;
 
 export interface LadderMovie {
   title: string;
@@ -45,19 +57,27 @@ export default function LadderStack({
    * entries beyond MAX_STACK_TILES are ignored. */
   movies: (LadderMovie | null | undefined)[];
 }) {
-  const [boardWidth, setBoardWidth] = useState(0);
+  const { width: windowWidth } = useWindowDimensions();
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+  // onLayout is the exact source, but it does not reliably fire for this
+  // view on react-native-web (verified: the tile font stayed pinned at its
+  // minimum because the measured width never left 0), so fall back to a
+  // window-derived estimate rather than silently rendering unscaled text.
+  const boardWidth =
+    measuredWidth || Math.min(MAX_BOARD_WIDTH, windowWidth - SCREEN_PADDING * 2);
   const cellSize = boardWidth / GRID_COLUMNS;
   // Scale label text off the measured cell size, the same way chart-ladder's
   // TileChip does, so tiles stay legible on a phone and don't look lost on a
-  // wide screen.
-  const fontSize = Math.max(7, cellSize * 0.3);
+  // wide screen. Tiles are TILE_ROWS tall, so two wrapped lines fit with
+  // room to spare.
+  const fontSize = Math.max(8, cellSize * 0.34);
 
   const placed = movies.slice(0, MAX_STACK_TILES);
 
   return (
     <View
       style={styles.grid}
-      onLayout={(e) => setBoardWidth(e.nativeEvent.layout.width)}
+      onLayout={(e) => setMeasuredWidth(e.nativeEvent.layout.width)}
     >
       {Array.from({ length: GRID_ROWS }).map((_, r) => (
         <View key={r} style={styles.row}>
@@ -79,14 +99,18 @@ export default function LadderStack({
               {
                 left: `${(i * STEP * 100) / GRID_COLUMNS}%`,
                 width: `${(TILE_SPAN * 100) / GRID_COLUMNS}%`,
-                top: `${((GRID_ROWS - 1 - i) * 100) / GRID_ROWS}%`,
-                height: `${100 / GRID_ROWS}%`,
+                top: `${((GRID_ROWS - (i + 1) * TILE_ROWS) * 100) / GRID_ROWS}%`,
+                height: `${(TILE_ROWS * 100) / GRID_ROWS}%`,
                 borderColor: accent,
                 boxShadow: `0 0 6px ${accent}` as any,
               },
             ]}
           >
-            <Text numberOfLines={2} style={[styles.tileText, { fontSize }]}>
+            {/* Up to 3 lines: two lines cover ~99% of titles in films.csv
+                (p99 length is 42 chars), and the third catches the tail
+                without overflowing a TILE_ROWS-tall tile. Anything longer
+                still truncates with an ellipsis. */}
+            <Text numberOfLines={3} style={[styles.tileText, { fontSize }]}>
               {movie.title}
             </Text>
           </View>
@@ -102,7 +126,7 @@ const styles = StyleSheet.create({
     // Square board, like chart-ladder's. Capped so it doesn't become an
     // enormous square on a desktop-width window (chart-ladder caps its own
     // board at 520px the same way).
-    maxWidth: 520,
+    maxWidth: MAX_BOARD_WIDTH,
     alignSelf: 'center',
     aspectRatio: GRID_COLUMNS / GRID_ROWS,
     position: 'relative',
