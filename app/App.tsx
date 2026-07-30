@@ -109,17 +109,21 @@ function GameScreen({ game }: { game: MovieLadder }) {
             <Text style={styles.label}>WHICH MOVIE CONNECTS TO THE TOP TILE?</Text>
 
             {round ? (
-              round.candidateIds.map((id) => {
-                const m = game.movie(id);
-                return (
-                  <MovieCell
-                    key={id}
-                    title={m.title}
-                    year={m.year}
-                    onPress={() => pick(id)}
-                  />
-                );
-              })
+              <View style={styles.candidatesRow}>
+                {round.candidateIds.map((id) => {
+                  const m = game.movie(id);
+                  return (
+                    <View key={id} style={styles.candidateSlot}>
+                      <MovieCell
+                        title={m.title}
+                        year={m.year}
+                        compact
+                        onPress={() => pick(id)}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
             ) : (
               <Text style={styles.result}>Dead end — no valid round from this movie.</Text>
             )}
@@ -165,6 +169,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.textPrimary,
     fontSize: 13,
+  },
+  candidatesRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  candidateSlot: {
+    flex: 1,
   },
   milestoneBanner: {
     marginTop: 16,

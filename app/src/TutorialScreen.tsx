@@ -130,12 +130,14 @@ function Board({
           ].map(({ id, highlight }) => {
             const movie = m(id);
             return (
-              <MovieCell
-                key={id}
-                title={movie.title}
-                year={movie.year}
-                state={highlight ? 'correct' : 'default'}
-              />
+              <View key={id} style={styles.candidateSlot}>
+                <MovieCell
+                  title={movie.title}
+                  year={movie.year}
+                  state={highlight ? 'correct' : 'default'}
+                  compact
+                />
+              </View>
             );
           })}
         </View>
@@ -156,12 +158,14 @@ function Board({
           ].map(({ id, highlight }) => {
             const movie = m(id);
             return (
-              <MovieCell
-                key={id}
-                title={movie.title}
-                year={movie.year}
-                state={highlight ? 'wrong' : 'default'}
-              />
+              <View key={id} style={styles.candidateSlot}>
+                <MovieCell
+                  title={movie.title}
+                  year={movie.year}
+                  state={highlight ? 'wrong' : 'default'}
+                  compact
+                />
+              </View>
             );
           })}
         </View>
@@ -266,7 +270,8 @@ const styles = StyleSheet.create({
   board: {
     marginBottom: 16,
   },
-  candidates: { gap: 0, marginTop: 4 },
+  candidates: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  candidateSlot: { flex: 1 },
   panel: { marginTop: 'auto', paddingBottom: 16 },
   body: { fontSize: 15, lineHeight: 21, marginBottom: 16, color: colors.textSecondary },
   button: {

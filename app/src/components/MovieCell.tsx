@@ -23,12 +23,18 @@ export default function MovieCell({
   year,
   state = 'default',
   big = false,
+  compact = false,
   onPress,
 }: {
   title: string;
   year: number | null;
   state?: CellState;
   big?: boolean;
+  /** Narrower cell for laying candidates out 3-across instead of stacked
+   * full-width: tighter padding, smaller type, and a capped line count
+   * (long titles ellipsize instead of growing the cell tall) so all three
+   * still read at roughly a third of the screen's width. */
+  compact?: boolean;
   onPress?: () => void;
 }) {
   const accent = BORDER_COLOR[state];
@@ -39,6 +45,7 @@ export default function MovieCell({
       style={[
         styles.cell,
         big && styles.cellBig,
+        compact && styles.cellCompact,
         {
           borderColor: accent,
           borderWidth: state === 'default' ? 1.5 : 2.5,
@@ -46,8 +53,15 @@ export default function MovieCell({
         },
       ]}
     >
-      <Text style={[styles.title, big && styles.titleBig]}>{title}</Text>
-      {year != null && <Text style={styles.year}>{year}</Text>}
+      <Text
+        style={[styles.title, big && styles.titleBig, compact && styles.titleCompact]}
+        numberOfLines={compact ? 4 : undefined}
+      >
+        {title}
+      </Text>
+      {year != null && (
+        <Text style={[styles.year, compact && styles.yearCompact]}>{year}</Text>
+      )}
     </View>
   );
 
@@ -69,6 +83,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 18,
   },
+  cellCompact: {
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    marginVertical: 0,
+  },
   title: {
     color: colors.textPrimary,
     fontWeight: '700',
@@ -79,10 +98,17 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
   },
+  titleCompact: {
+    fontSize: 12,
+  },
   year: {
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
+  },
+  yearCompact: {
+    fontSize: 10,
+    marginTop: 1,
   },
 });
