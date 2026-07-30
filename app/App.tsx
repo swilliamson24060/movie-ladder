@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import connectionsData from './assets/data/connections.json';
 import { MovieLadder, Round } from './src/movieLadder';
 import TutorialScreen from './src/TutorialScreen';
 import MovieCell from './src/components/MovieCell';
 import LadderStack, { MAX_STACK_TILES } from './src/components/LadderStack';
+import { formatMatches } from './src/tutorial';
 import { colors } from './src/theme';
 
 const SLIDE_DURATION_MS = 450;
@@ -29,11 +30,24 @@ export default function App() {
   );
 }
 
+interface PendingResult {
+  correct: boolean;
+  pickedId: number;
+  correctId: number;
+  previousId: number;
+  matches: Record<string, string[]>;
+}
+
 function GameScreen({ game }: { game: MovieLadder }) {
   const [stack, setStack] = useState<number[]>(() => [game.randomMovie()]);
   const currentId = stack[stack.length - 1];
   const [round, setRound] = useState<Round | null>(() => game.buildRound(currentId));
-  const [lastResult, setLastResult] = useState<string | null>(null);
+  // Set the instant a candidate is tapped, cleared once the player dismisses
+  // the result modal -- every pick gets this, right or wrong, per the "more
+  // prominent notice on correctness" request. Advancing the stack/round
+  // waits for that dismissal (see confirmPick), so the connection is always
+  // shown before the board moves on.
+  const [pendingResult, setPendingResult] = useState<PendingResult | null>(null);
   // True once a group of 5 is showing, from the pick that completed it until
   // the player taps CONTINUE -- no round is built for the 6th movie until
   // the pause is dismissed and the slide-down finishes (CLAUDE.md section
@@ -43,19 +57,22 @@ function GameScreen({ game }: { game: MovieLadder }) {
 
   function pick(candidateId: number) {
     if (!round) return;
+    setPendingResult({
+      correct: candidateId === round.correctId,
+      pickedId: candidateId,
+      correctId: round.correctId,
+      previousId: currentId,
+      matches: round.matches,
+    });
+  }
 
-    if (candidateId === round.correctId) {
-      const lines = Object.entries(round.matches).map(
-        ([type, values]) => `${type.replace(/_/g, ' ')}: ${values.join(', ')}`
-      );
-      setLastResult(`Correct! ${lines.join(' / ')}`);
-    } else {
-      setLastResult('Not a connection — the correct movie was placed for you.');
-    }
+  function confirmPick() {
+    if (!pendingResult) return;
+    const { correctId } = pendingResult;
+    setPendingResult(null);
 
     // The chain always advances, right or wrong (CLAUDE.md section 5b).
-    const nextId = round.correctId;
-    const newStack = [...stack, nextId];
+    const newStack = [...stack, correctId];
     setStack(newStack);
 
     if (newStack.length >= MAX_STACK_TILES) {
@@ -65,7 +82,7 @@ function GameScreen({ game }: { game: MovieLadder }) {
       setRound(null);
       setMilestone(true);
     } else {
-      setRound(game.buildRound(nextId));
+      setRound(game.buildRound(correctId));
     }
   }
 
@@ -127,12 +144,62 @@ function GameScreen({ game }: { game: MovieLadder }) {
             ) : (
               <Text style={styles.result}>Dead end — no valid round from this movie.</Text>
             )}
-
-            {lastResult && <Text style={styles.result}>{lastResult}</Text>}
           </>
         )}
       </ScrollView>
+
+      {pendingResult && (
+        <ResultModal game={game} result={pendingResult} onContinue={confirmPick} />
+      )}
     </View>
+  );
+}
+
+function ResultModal({
+  game,
+  result,
+  onContinue,
+}: {
+  game: MovieLadder;
+  result: PendingResult;
+  onContinue: () => void;
+}) {
+  const { correct, pickedId, correctId, previousId, matches } = result;
+  const previousTitle = game.movie(previousId).title;
+  const correctTitle = game.movie(correctId).title;
+  const pickedTitle = game.movie(pickedId).title;
+  const matchLines = formatMatches(matches);
+
+  return (
+    <Modal transparent animationType="fade">
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <ScrollView style={styles.modalScroll}>
+            <Text style={[styles.modalTitle, { color: correct ? colors.green : colors.red }]}>
+              {correct ? 'Correct!' : 'Not quite.'}
+            </Text>
+            {!correct && (
+              <Text style={styles.modalLine}>
+                {pickedTitle} doesn’t connect to {previousTitle} by anything in the data. The
+                correct movie, {correctTitle}, has been placed on the ladder for you
+                automatically.
+              </Text>
+            )}
+            <Text style={styles.modalLine}>
+              {correctTitle} connects to {previousTitle} by:
+            </Text>
+            {matchLines.map((line, i) => (
+              <Text key={i} style={styles.modalLine}>
+                • {line}
+              </Text>
+            ))}
+          </ScrollView>
+          <Pressable style={styles.button} onPress={onContinue}>
+            <Text style={styles.buttonText}>CONTINUE ▶</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -200,4 +267,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonText: { color: '#fff', fontWeight: '800', letterSpacing: 1 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(5, 8, 18, 0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: colors.headerBackground,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: colors.cellBorder,
+    padding: 20,
+    width: '100%',
+    maxWidth: 420,
+    maxHeight: '90%',
+  },
+  modalScroll: { flexShrink: 1 },
+  modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 10 },
+  modalLine: { fontSize: 14, lineHeight: 20, marginBottom: 4, color: colors.textPrimary },
 });
