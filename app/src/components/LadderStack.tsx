@@ -3,14 +3,17 @@ import { Animated, StyleSheet, Text, useWindowDimensions, View } from 'react-nat
 import { colors } from '../theme';
 
 /**
- * Movie-ladder's game board: a square grid of square cells that fills the
+ * Movie-ladder's game board: a grid of square cells that fills the
  * available width, matching chart-ladder's board look (see BoardGrid.tsx
  * and GRID_SIZE in the Chartcross repo, which is a 7x7 square of 1x1
- * tiles). The placement geometry is movie-ladder's own -- chart-ladder has
+ * tiles) but sized to exactly fit this game's own stack instead of being
+ * square. The placement geometry is movie-ladder's own -- chart-ladder has
  * no multi-cell tiles and no staircase.
  *
  * Geometry (fixed spec, not tunable per-call):
- * - GRID_COLUMNS x GRID_ROWS square board, square cells.
+ * - GRID_COLUMNS x GRID_ROWS board, square cells. GRID_ROWS is exactly
+ *   MAX_STACK_TILES * TILE_ROWS (5*2=10) -- a completed group of 5 fills
+ *   the board's full height with no empty rows left over above it.
  * - Tiles are TILE_SPAN columns wide and TILE_ROWS rows tall. The extra
  *   height is there so long titles ("The Lord of the Rings: The Return of
  *   the King") can wrap to two lines and still sit centered in the tile.
@@ -21,15 +24,14 @@ import { colors } from '../theme';
  *   from the left edge: tile i has left = i * STEP. With
  *   STEP = TILE_SPAN / 2 each tile overhangs exactly half the one below.
  * - MAX_STACK_TILES = 5 tiles per group; the 5th ends flush against the
- *   right edge (4*2 + 4 = 12 = GRID_COLUMNS), so a completed group spans
- *   the board's full width and its bottom 10 rows.
+ *   right edge (4*2 + 4 = 12 = GRID_COLUMNS) and the top edge, so a
+ *   completed group spans the board exactly, corner to corner.
  *
- * Rows above the stack stay empty, the same way most of chart-ladder's
- * board is unfilled cells. Slots with no movie yet are never given
- * placeholder titles -- they simply aren't rendered.
+ * Slots with no movie yet are never given placeholder titles -- they
+ * simply aren't rendered, leaving that part of the grid empty.
  */
 const GRID_COLUMNS = 12;
-const GRID_ROWS = 12;
+const GRID_ROWS = 10;
 const TILE_SPAN = 4;
 const TILE_ROWS = 2;
 const STEP = 2;
@@ -145,9 +147,8 @@ export default function LadderStack({
 const styles = StyleSheet.create({
   grid: {
     width: '100%',
-    // Square board, like chart-ladder's. Capped so it doesn't become an
-    // enormous square on a desktop-width window (chart-ladder caps its own
-    // board at 520px the same way).
+    // Capped so it doesn't become enormous on a desktop-width window
+    // (chart-ladder caps its own board at 520px the same way).
     maxWidth: MAX_BOARD_WIDTH,
     alignSelf: 'center',
     aspectRatio: GRID_COLUMNS / GRID_ROWS,
