@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, Pressable } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import connectionsData from './assets/data/connections.json';
 import { MovieLadder, Round } from './src/movieLadder';
 import TutorialScreen from './src/TutorialScreen';
+import MovieCell from './src/components/MovieCell';
+import { colors } from './src/theme';
 
 // Scaffold: proves the data pipeline -> engine -> app wiring works end to
 // end (loads connections.json, builds real rounds) and hosts the real
@@ -14,11 +16,16 @@ export default function App() {
   const game = useMemo(() => new MovieLadder(connectionsData as any), []);
   const [showTutorial, setShowTutorial] = useState(true);
 
-  if (showTutorial) {
-    return <TutorialScreen game={game} onDone={() => setShowTutorial(false)} />;
-  }
-
-  return <PlaceholderGame game={game} />;
+  return (
+    <View style={styles.app}>
+      <StatusBar style="light" />
+      {showTutorial ? (
+        <TutorialScreen game={game} onDone={() => setShowTutorial(false)} />
+      ) : (
+        <PlaceholderGame game={game} />
+      )}
+    </View>
+  );
 }
 
 function PlaceholderGame({ game }: { game: MovieLadder }) {
@@ -45,62 +52,70 @@ function PlaceholderGame({ game }: { game: MovieLadder }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar style="auto" />
-      <Text style={styles.header}>Movie Ladder (scaffold)</Text>
-      <Text style={styles.current}>
-        {current.title} ({current.year})
-      </Text>
-      <Text style={styles.label}>Which movie connects to this one?</Text>
-      {round ? (
-        round.candidateIds.map((id) => {
-          const m = game.movie(id);
-          return (
-            <Pressable key={id} style={styles.candidate} onPress={() => pick(id)}>
-              <Text>
-                {m.title} ({m.year})
-              </Text>
-            </Pressable>
-          );
-        })
-      ) : (
-        <Text>Dead end -- no valid round from this movie.</Text>
-      )}
-      {lastResult && <Text style={styles.result}>{lastResult}</Text>}
+      <View style={styles.header}>
+        <Text style={styles.headerText}>MOVIE LADDER</Text>
+      </View>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.board}>
+          <MovieCell title={current.title} year={current.year} state="current" big />
+          <Text style={styles.label}>WHICH MOVIE CONNECTS TO THIS ONE?</Text>
+          {round ? (
+            round.candidateIds.map((id) => {
+              const m = game.movie(id);
+              return (
+                <MovieCell
+                  key={id}
+                  title={m.title}
+                  year={m.year}
+                  onPress={() => pick(id)}
+                />
+              );
+            })
+          ) : (
+            <Text style={styles.result}>Dead end -- no valid round from this movie.</Text>
+          )}
+          {lastResult && <Text style={styles.result}>{lastResult}</Text>}
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
+  app: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, paddingHorizontal: 16, paddingTop: 48 },
+  scrollContent: { paddingBottom: 24 },
   header: {
-    fontSize: 14,
-    color: '#888',
-    marginBottom: 8,
-  },
-  current: {
-    fontSize: 22,
-    fontWeight: '700',
+    backgroundColor: colors.headerBackground,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 8,
     marginBottom: 16,
   },
-  label: {
-    marginBottom: 12,
+  headerText: {
+    color: colors.textPrimary,
+    fontWeight: '800',
+    fontSize: 18,
+    letterSpacing: 2,
+    textAlign: 'center',
   },
-  candidate: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
-    marginVertical: 6,
-    width: '100%',
+  board: {
+    backgroundColor: colors.boardBackground,
+    borderRadius: 10,
+    padding: 14,
+  },
+  label: {
+    color: colors.textSecondary,
+    fontWeight: '700',
+    fontSize: 12,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    marginVertical: 10,
   },
   result: {
-    marginTop: 16,
+    marginTop: 12,
     textAlign: 'center',
+    color: colors.textPrimary,
+    fontSize: 13,
   },
 });

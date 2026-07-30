@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { MovieLadder } from './movieLadder';
+import { colors } from './theme';
+import MovieCell from './components/MovieCell';
 import {
   buildTutorialScript,
   COPY,
@@ -37,13 +39,17 @@ export default function TutorialScreen({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerText}>Tutorial</Text>
+        <Text style={styles.headerText}>TUTORIAL</Text>
         <Pressable onPress={skip}>
           <Text style={styles.skip}>SKIP ✕</Text>
         </Pressable>
       </View>
 
-      <Board phase={phase} script={script} game={game} />
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.board}>
+          <Board phase={phase} script={script} game={game} />
+        </View>
+      </ScrollView>
 
       {(phase === 'intro' ||
         phase === 'pick-correct' ||
@@ -96,90 +102,93 @@ function Board({
   script: ReturnType<typeof buildTutorialScript>;
   game: MovieLadder;
 }) {
-  const title = (id: number) => {
-    const m = game.movie(id);
-    return `${m.title} (${m.year})`;
-  };
+  const m = (id: number) => game.movie(id);
 
   if (phase === 'intro') {
-    return <BoardTop label={title(script.pulpFiction)} />;
+    const cur = m(script.pulpFiction);
+    return <MovieCell title={cur.title} year={cur.year} state="current" big />;
   }
   if (phase === 'pick-correct' || phase === 'explain-correct') {
+    const cur = m(script.pulpFiction);
     return (
       <>
-        <BoardTop label={title(script.pulpFiction)} />
-        <Candidates
-          items={[
-            { label: title(script.killBill1), highlight: true },
-            { label: title(script.harryPotter1), highlight: false },
-            { label: title(script.guardiansOfTheGalaxy), highlight: false },
-          ]}
-        />
+        <MovieCell title={cur.title} year={cur.year} state="current" big />
+        <View style={styles.candidates}>
+          {[
+            { id: script.killBill1, highlight: true },
+            { id: script.harryPotter1, highlight: false },
+            { id: script.guardiansOfTheGalaxy, highlight: false },
+          ].map(({ id, highlight }) => {
+            const movie = m(id);
+            return (
+              <MovieCell
+                key={id}
+                title={movie.title}
+                year={movie.year}
+                state={highlight ? 'correct' : 'default'}
+              />
+            );
+          })}
+        </View>
       </>
     );
   }
   if (phase === 'pick-wrong' || phase === 'explain-wrong') {
+    const cur = m(script.killBill1);
     return (
       <>
-        <BoardTop label={title(script.killBill1)} />
-        <Candidates
-          items={[
-            { label: title(script.killBill2), highlight: false },
-            { label: title(script.backToTheFuture), highlight: phase === 'pick-wrong' },
-            { label: title(script.homeAlone), highlight: false },
-          ]}
-        />
+        <MovieCell title={cur.title} year={cur.year} state="current" big />
+        <View style={styles.candidates}>
+          {[
+            { id: script.killBill2, highlight: false },
+            { id: script.backToTheFuture, highlight: phase === 'pick-wrong' },
+            { id: script.homeAlone, highlight: false },
+          ].map(({ id, highlight }) => {
+            const movie = m(id);
+            return (
+              <MovieCell
+                key={id}
+                title={movie.title}
+                year={movie.year}
+                state={highlight ? 'wrong' : 'default'}
+              />
+            );
+          })}
+        </View>
       </>
     );
   }
   if (phase === 'milestone') {
     return (
       <View style={styles.milestonePreview}>
-        {[1, 2, 3, 4].map((n) => (
-          <View key={n} style={[styles.ghostTile, { opacity: 1 - n * 0.2 }]} />
-        ))}
-        <View style={styles.topTile}>
-          <Text style={styles.topTileText}>{title(script.killBill2)}</Text>
+        <View style={styles.ghostRow}>
+          {[1, 2, 3, 4].map((n) => (
+            <View key={n} style={[styles.ghostCell, { opacity: 1 - n * 0.18 }]} />
+          ))}
         </View>
+        {(() => {
+          const top = m(script.killBill2);
+          return <MovieCell title={top.title} year={top.year} state="current" big />;
+        })()}
       </View>
     );
   }
   if (phase === 'done') {
     return (
       <View style={styles.chainReview}>
-        {[script.pulpFiction, script.killBill1, script.killBill2].map((id, i) => (
-          <Text key={id} style={styles.chainItem}>
-            {i > 0 ? '↓\n' : ''}
-            {title(id)}
-          </Text>
-        ))}
+        {[script.pulpFiction, script.killBill1, script.killBill2].map((id, i) => {
+          const movie = m(id);
+          return (
+            <View key={id} style={styles.chainItemWrap}>
+              {i > 0 && <Text style={styles.chainArrow}>↓</Text>}
+              <MovieCell title={movie.title} year={movie.year} state="current" />
+            </View>
+          );
+        })}
       </View>
     );
   }
   return null;
-}
-
-function BoardTop({ label }: { label: string }) {
-  return (
-    <View style={styles.boardTop}>
-      <Text style={styles.boardTopText}>{label}</Text>
-    </View>
-  );
-}
-
-function Candidates({ items }: { items: { label: string; highlight: boolean }[] }) {
-  return (
-    <View style={styles.candidates}>
-      {items.map((it) => (
-        <View
-          key={it.label}
-          style={[styles.candidate, it.highlight && styles.candidateHighlight]}
-        >
-          <Text>{it.label}</Text>
-        </View>
-      ))}
-    </View>
-  );
 }
 
 function StaticPhasePanel({ phase, onAdvance }: { phase: Phase; onAdvance: () => void }) {
@@ -217,12 +226,14 @@ function ExplainModal({
     <Modal transparent animationType="fade">
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>{title}</Text>
-          {lines.map((line, i) => (
-            <Text key={i} style={styles.modalLine}>
-              {line}
-            </Text>
-          ))}
+          <ScrollView>
+            <Text style={styles.modalTitle}>{title}</Text>
+            {lines.map((line, i) => (
+              <Text key={i} style={styles.modalLine}>
+                {line}
+              </Text>
+            ))}
+          </ScrollView>
           <Pressable
             disabled={!canContinue}
             style={[styles.button, !canContinue && styles.buttonDisabled]}
@@ -237,69 +248,81 @@ function ExplainModal({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 16 },
+  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 16, paddingTop: 48 },
+  scrollContent: { flexGrow: 1, justifyContent: 'center', paddingBottom: 12 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  headerText: { fontWeight: '700', fontSize: 16 },
-  skip: { color: '#888' },
-  boardTop: {
-    borderWidth: 2,
-    borderColor: '#333',
-    borderRadius: 10,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  boardTopText: { fontSize: 20, fontWeight: '700' },
-  candidates: { gap: 8 },
-  candidate: {
-    borderWidth: 1,
-    borderColor: '#ccc',
+    backgroundColor: colors.headerBackground,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     borderRadius: 8,
-    padding: 12,
+    marginBottom: 16,
   },
-  candidateHighlight: { borderColor: '#2a9d34', borderWidth: 2, backgroundColor: '#eaffea' },
-  panel: { marginTop: 'auto' },
-  body: { fontSize: 15, lineHeight: 21, marginBottom: 16 },
+  headerText: {
+    color: colors.textPrimary,
+    fontWeight: '800',
+    fontSize: 15,
+    letterSpacing: 1.5,
+  },
+  skip: {
+    color: colors.textSecondary,
+    fontWeight: '800',
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  board: {
+    backgroundColor: colors.boardBackground,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 16,
+  },
+  candidates: { gap: 0, marginTop: 4 },
+  panel: { marginTop: 'auto', paddingBottom: 16 },
+  body: { fontSize: 15, lineHeight: 21, marginBottom: 16, color: colors.textSecondary },
   button: {
-    backgroundColor: '#222',
+    backgroundColor: colors.pink,
     borderRadius: 8,
     padding: 14,
     alignItems: 'center',
   },
-  buttonDisabled: { backgroundColor: '#999' },
-  buttonText: { color: '#fff', fontWeight: '700' },
+  buttonDisabled: { backgroundColor: colors.cellBorder },
+  buttonText: { color: '#fff', fontWeight: '800', letterSpacing: 1 },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(5, 8, 18, 0.85)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
   },
-  modalCard: { backgroundColor: '#fff', borderRadius: 12, padding: 20, width: '100%', maxWidth: 420 },
-  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 10 },
-  modalLine: { fontSize: 14, lineHeight: 20, marginBottom: 4 },
-  milestonePreview: { alignItems: 'center', marginBottom: 16 },
-  ghostTile: {
-    height: 20,
-    width: '90%',
-    backgroundColor: '#ddd',
-    borderRadius: 6,
-    marginBottom: 4,
-  },
-  topTile: {
+  modalCard: {
+    backgroundColor: colors.headerBackground,
+    borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#333',
-    borderRadius: 10,
-    padding: 16,
+    borderColor: colors.cellBorder,
+    padding: 20,
     width: '100%',
-    alignItems: 'center',
+    maxWidth: 420,
+    maxHeight: '90%',
   },
-  topTileText: { fontWeight: '700' },
-  chainReview: { alignItems: 'center', gap: 4 },
-  chainItem: { textAlign: 'center', fontSize: 15 },
+  modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 10, color: colors.textPrimary },
+  modalLine: { fontSize: 14, lineHeight: 20, marginBottom: 4, color: colors.textPrimary },
+  milestonePreview: { alignItems: 'center' },
+  ghostRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 12,
+  },
+  ghostCell: {
+    width: 40,
+    height: 40,
+    backgroundColor: colors.cellEmpty,
+    borderWidth: 1.5,
+    borderColor: colors.cellBorder,
+    borderRadius: 8,
+  },
+  chainReview: { alignItems: 'center' },
+  chainItemWrap: { alignItems: 'center', width: '100%' },
+  chainArrow: { color: colors.textSecondary, fontSize: 16, marginVertical: 2 },
 });
