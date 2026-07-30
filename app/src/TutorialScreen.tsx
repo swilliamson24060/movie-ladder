@@ -4,6 +4,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { MovieLadder } from './movieLadder';
 import { colors } from './theme';
 import MovieCell from './components/MovieCell';
+import LadderStack from './components/LadderStack';
 import {
   buildTutorialScript,
   COPY,
@@ -12,12 +13,6 @@ import {
   Phase,
   PHASE_ORDER,
 } from './tutorial';
-
-// Horizontal offset per stacked tile in the chain review, so the stack
-// reads as a left-to-right staircase instead of a straight vertical column.
-// Percentage of the board's width, matching MovieCell's `small` variant
-// (also 20% wide) so the steps and the tiles scale together.
-const STAIR_STEP_PERCENT = 20;
 
 export default function TutorialScreen({
   game,
@@ -51,7 +46,7 @@ export default function TutorialScreen({
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <View style={styles.board}>
           <Board phase={phase} script={script} game={game} />
         </View>
@@ -164,34 +159,16 @@ function Board({
       </>
     );
   }
-  if (phase === 'milestone') {
-    return (
-      <View style={styles.milestonePreview}>
-        <View style={styles.ghostRow}>
-          {[1, 2, 3, 4].map((n) => (
-            <View key={n} style={[styles.ghostCell, { opacity: 1 - n * 0.18 }]} />
-          ))}
-        </View>
-        {(() => {
-          const top = m(script.killBill2);
-          return <MovieCell title={top.title} year={top.year} state="current" big />;
-        })()}
-      </View>
-    );
-  }
-  if (phase === 'done') {
-    return (
-      <View style={styles.chainReview}>
-        {[script.pulpFiction, script.killBill1, script.killBill2].map((id, i) => {
-          const movie = m(id);
-          return (
-            <View key={id} style={{ width: '100%', marginLeft: `${i * STAIR_STEP_PERCENT}%` as any }}>
-              <MovieCell title={movie.title} year={movie.year} state="current" small />
-            </View>
-          );
-        })}
-      </View>
-    );
+  if (phase === 'milestone' || phase === 'done') {
+    // Only 3 real movies are scripted for this tutorial (see
+    // buildTutorialScript) -- the remaining 2 slots of the 5-tile milestone
+    // grid render as empty ghost squares rather than inventing titles for
+    // movies 4 and 5.
+    const stack = [script.pulpFiction, script.killBill1, script.killBill2].map((id) => {
+      const movie = m(id);
+      return { title: movie.title, year: movie.year };
+    });
+    return <LadderStack movies={stack} />;
   }
   return null;
 }
@@ -231,7 +208,7 @@ function ExplainModal({
     <Modal transparent animationType="fade">
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
-          <ScrollView>
+          <ScrollView style={styles.modalScroll}>
             <Text style={styles.modalTitle}>{title}</Text>
             {lines.map((line, i) => (
               <Text key={i} style={styles.modalLine}>
@@ -254,6 +231,7 @@ function ExplainModal({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 16, paddingTop: 48 },
+  scrollView: { flex: 1 },
   scrollContent: { flexGrow: 1, justifyContent: 'center', paddingBottom: 12 },
   header: {
     flexDirection: 'row',
@@ -311,21 +289,7 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     maxHeight: '90%',
   },
+  modalScroll: { flexShrink: 1 },
   modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 10, color: colors.textPrimary },
   modalLine: { fontSize: 14, lineHeight: 20, marginBottom: 4, color: colors.textPrimary },
-  milestonePreview: { alignItems: 'center' },
-  ghostRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 12,
-  },
-  ghostCell: {
-    width: 40,
-    height: 40,
-    backgroundColor: colors.cellEmpty,
-    borderWidth: 1.5,
-    borderColor: colors.cellBorder,
-    borderRadius: 8,
-  },
-  chainReview: { width: '100%' },
 });
