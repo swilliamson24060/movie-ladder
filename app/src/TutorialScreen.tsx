@@ -79,7 +79,7 @@ export default function TutorialScreen({
         <ExplainModal
           title={COPY['explain-wrong'].title!}
           lines={[
-            'Home Alone doesn’t connect to Kill Bill: Volume 1 by anything in the data. The correct movie, Kill Bill: Volume 2, has been placed on the ladder for you automatically — the chain always keeps moving, whether you get a round right or not.',
+            'Back to the Future doesn’t connect to Kill Bill: Volume 1 by anything in the data. The correct movie, Kill Bill: Volume 2, has been placed on the ladder for you automatically — the chain always keeps moving, whether you get a round right or not.',
             '',
             'Kill Bill: Volume 2 connects to Kill Bill: Volume 1 by:',
             ...formatMatches(script.correctRound2).map((l) => `• ${l}`),
