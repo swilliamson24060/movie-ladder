@@ -502,7 +502,7 @@ on-disk caches (`cache/`, `cache_films/`). Full music run takes a few hours.
 
 ## 9. Open items / next steps
 
-**Movie Ladder — updated 2026-07-30, this is the current punch list:**
+**Movie Ladder — updated 2026-07-31, this is the current punch list:**
 - [x] Run full `films_enrich.py` 1950–2026 — done, 17,009 films, verified,
   two data bugs found and fixed (see section 6).
 - [x] Game design (strikes, scoring, betting, tutorial flow, run
@@ -607,6 +607,26 @@ on-disk caches (`cache/`, `cache_films/`). Full music run takes a few hours.
   weren't before), but "feels right" hasn't been evaluated against actual
   play: bet payout is 10x that round's point value; bet timing/frequency
   is once per completed 5-tile floor (skipping floor 1).
+- [x] Save-game mechanic added, 2026-07-31 — `App.tsx` auto-persists the
+  entire run to `localStorage` on every state change and resumes it on
+  reload, since there's only ever one run in flight (not an explicit save
+  slot). Resumes mid-round, mid-result-modal, at a milestone/bet-offer
+  screen, or even the RUN OVER screen, exactly as left; skips the
+  tutorial on reload if there's a run to resume. PLAY AGAIN overwrites
+  the save with the fresh run, no separate clearing path needed.
+  **Correctness detail worth remembering:** movie IDs are array positions
+  in `connections.json` (see `connections_generator.py`), which can shift
+  between dataset regenerations even without the total movie count
+  changing (referenced-movie set changes, e.g. the `same_award`
+  restriction above could drop a movie whose only surviving connection
+  was an excluded award value) — this project has already regenerated
+  that file twice in one session. A save's displayed movie IDs are each
+  paired with their title at save time and re-checked against the live
+  dataset on load; any mismatch (or malformed JSON, or a save-schema
+  version bump) discards the whole save rather than risk silently
+  resuming with the wrong movie under a stale ID. Verified in-browser,
+  including deliberately corrupting a saved title and malformed JSON —
+  both fall back to a fresh game with no crash.
 
 **Chart Ladder (music) — still open, not touched by the movie-ladder work:**
 - Tune tile selection weights using the generator's stats table —
