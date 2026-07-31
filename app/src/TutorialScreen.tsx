@@ -58,7 +58,6 @@ export default function TutorialScreen({
         phase === 'betting-intro' ||
         phase === 'betting-offer' ||
         phase === 'betting-round' ||
-        phase === 'strikes' ||
         phase === 'done') && (
         <StaticPhasePanel phase={phase} onAdvance={advance} />
       )}

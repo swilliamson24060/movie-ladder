@@ -15,6 +15,10 @@ two deviations from this doc's original draft, both decided later:
 - **The `betting` phase was expanded into a live demo, not a static
   explainer (2026-07-31)** — see its entry below for the 4 sub-phases that
   replaced it.
+- **The standalone `strikes` phase was folded into `done` (2026-07-31)** —
+  it was a single sentence on an otherwise-empty board, sparse enough next
+  to every other phase's live demo that it read as an afterthought. Its
+  copy now opens the `done` screen's body instead of getting its own tap.
 
 Example movies below are real, pulled from `films.csv`, and hand-verified
 against the actual data (see the "Verified connections used" section) so
@@ -40,8 +44,7 @@ type Phase =
   | "betting-offer"      // live preview of the real BET / NO THANKS screen
   | "betting-round"      // scripted: gold-marked candidates, correct one wins
   | "betting-win"        // modal, connection breakdown + bet payout
-  | "strikes"            // explains the 5-strike game-over
-  | "done"
+  | "done"               // chain review + explains the 5-strike game-over
 ```
 
 Global rules carried over from chart-ladder's tutorial: a fixed demo
@@ -178,19 +181,18 @@ Copy:
 
 Button: "NEXT ▶"
 
-**strikes** — Copy:
+**done** — Full mini chain review of the 4 scripted rounds (Pulp Fiction →
+Kill Bill: Volume 1 → Kill Bill: Volume 2 → Jackie Brown, the last hop
+added by the betting-round demo), same pattern as chart-ladder's "done"
+phase. Also carries what used to be the standalone `strikes` phase's copy
+(folded in 2026-07-31 — see the note at the top of this doc) as an
+opening paragraph, since a single sentence on an otherwise-empty board had
+nothing to anchor it once every other phase had a live demo. Copy:
 
 > Miss 5 times total and the run ends. From there: your score is checked
 > against the leaderboard, you can review the full connection chain you
 > built, or start a new run.
-
-Button: "NEXT ▶"
-
-**done** — Full mini chain review of the 4 scripted rounds (Pulp Fiction →
-Kill Bill: Volume 1 → Kill Bill: Volume 2 → Jackie Brown, the last hop
-added by the betting-round demo), same pattern as chart-ladder's "done"
-phase. Copy:
-
+>
 > That's the idea! Tap 🔗 VIEW CONNECTION CHAIN any time during a real run
 > to review your path like this again.
 

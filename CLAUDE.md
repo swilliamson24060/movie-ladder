@@ -287,14 +287,20 @@ connections — no tutorial changes were needed either time.
 
 **Tutorial:** full phase-by-phase script (with real, hand-verified example
 movies) is in `TUTORIAL_FLOW.md`. Implemented (see section 9's punch
-list) and since extended twice, 2026-07-31: the 5-second minimum delay on
-the explain modals was removed (pure friction, no upside), and the
-`betting` phase — originally a static explainer, since betting depended
-on a real checkpoint the scripted 2-round tutorial didn't reach — was
-replaced with a 4-phase live demo (`betting-intro`/`betting-offer`/
-`betting-round`/`betting-win`) continuing the scripted Tarantino chain
-past Kill Bill Vol. 2 into a real, verified bet-round win against Jackie
-Brown. `TUTORIAL_FLOW.md` was updated to match both changes.
+list) and since extended three times, 2026-07-31:
+- The 5-second minimum delay on the explain modals was removed (pure
+  friction, no upside).
+- The `betting` phase — originally a static explainer, since betting
+  depended on a real checkpoint the scripted 2-round tutorial didn't
+  reach — was replaced with a 4-phase live demo (`betting-intro`/
+  `betting-offer`/`betting-round`/`betting-win`) continuing the scripted
+  Tarantino chain past Kill Bill Vol. 2 into a real, verified bet-round
+  win against Jackie Brown.
+- The standalone `strikes` phase (one sentence on an empty board) was
+  folded into `done`'s copy instead of getting its own tap, once it was
+  the only remaining phase with nothing to show.
+
+`TUTORIAL_FLOW.md` was updated to match all three changes.
 
 **App architecture, decided 2026-07-30:** movie-ladder gets its own
 separate app project inside this repo, not a new package in chart-ladder's

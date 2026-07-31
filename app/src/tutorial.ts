@@ -27,7 +27,6 @@ export type Phase =
   | 'betting-offer'
   | 'betting-round'
   | 'betting-win'
-  | 'strikes'
   | 'done';
 
 export const PHASE_ORDER: Phase[] = [
@@ -41,7 +40,6 @@ export const PHASE_ORDER: Phase[] = [
   'betting-offer',
   'betting-round',
   'betting-win',
-  'strikes',
   'done',
 ];
 
@@ -172,13 +170,9 @@ export const COPY: Record<Phase, { title?: string; body: string; button: string 
     body: '', // filled in per-round from formatMatches()
     button: 'NEXT ▶',
   },
-  strikes: {
-    body:
-      'Miss 5 times total and the run ends. From there: your score is checked against the leaderboard, you can review the full connection chain you built, or start a new run.',
-    button: 'NEXT ▶',
-  },
   done: {
-    body: 'That’s the idea! Tap 🔗 VIEW CONNECTION CHAIN any time during a real run to review your path like this again.',
+    body:
+      'Miss 5 times total and the run ends. From there: your score is checked against the leaderboard, you can review the full connection chain you built, or start a new run.\n\nThat’s the idea! Tap 🔗 VIEW CONNECTION CHAIN any time during a real run to review your path like this again.',
     button: 'START PLAYING',
   },
 };
