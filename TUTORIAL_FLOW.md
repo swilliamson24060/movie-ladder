@@ -3,14 +3,22 @@
 Adapted from chart-ladder's `TutorialModal.tsx` + `HowToPlayModal.tsx`
 (reviewed 2026-07-30, see project memory), with the differences that were
 deliberately decided for movie-ladder: no connection-type guessing step,
-5-strike limit, minimum-5-second explanation modals, an open-ended run
-instead of a bounded path, and a betting mechanic chart-ladder doesn't have.
+5-strike limit, an open-ended run instead of a bounded path, and a betting
+mechanic chart-ladder doesn't have.
 
-Not yet implemented — this is the phase-by-phase script + copy to build
-from once the game engine exists. Example movies below are real, pulled
-from `films.csv`, and hand-verified against the actual data (see the
-"Verified connections used" section) so the tutorial teaches with a true
-example instead of an invented one.
+Implemented (`app/src/TutorialScreen.tsx` + `app/src/tutorial.ts`), with
+two deviations from this doc's original draft, both decided later:
+- **The minimum-5-second explain-modal delay was removed entirely
+  (2026-07-31)** — pure friction with no upside once the tutorial content
+  is readable at a glance. The "5s-min modal" phases below now advance the
+  instant the player taps, same as every other phase.
+- **The `betting` phase was expanded into a live demo, not a static
+  explainer (2026-07-31)** — see its entry below for the 4 sub-phases that
+  replaced it.
+
+Example movies below are real, pulled from `films.csv`, and hand-verified
+against the actual data (see the "Verified connections used" section) so
+the tutorial teaches with a true example instead of an invented one.
 
 ## Phase list
 
@@ -24,11 +32,14 @@ no existing precedent to lean on):
 type Phase =
   | "intro"
   | "pick-correct"     // scripted: player taps the correct candidate
-  | "explain-correct"  // 5s-min modal
+  | "explain-correct"  // modal, connection breakdown
   | "pick-wrong"        // scripted: player taps a decoy on purpose
-  | "explain-wrong"     // 5s-min modal
+  | "explain-wrong"     // modal, connection breakdown + strike count
   | "milestone"         // explains the 5-tile scroll-off + bonus scoring
-  | "betting"            // explains the checkpoint bet offer
+  | "betting-intro"      // recaps the checkpoint bet offer
+  | "betting-offer"      // live preview of the real BET / NO THANKS screen
+  | "betting-round"      // scripted: gold-marked candidates, correct one wins
+  | "betting-win"        // modal, connection breakdown + bet payout
   | "strikes"            // explains the 5-strike game-over
   | "done"
 ```
@@ -36,9 +47,9 @@ type Phase =
 Global rules carried over from chart-ladder's tutorial: a fixed demo
 sequence (not randomized) so every player sees the identical walkthrough; a
 persistent "SKIP ✕" in the header at every phase; advancement is always
-player-paced via a button tap — the modals' 5-second *minimum* is the one
-new exception (button is present but disabled/unpressable for the first 5s,
-matching your "minimum 5s, then tap to continue" spec).
+player-paced via a button tap, with no minimum delay on any phase
+(the original draft specced a 5-second minimum on the explain modals —
+removed 2026-07-31, see the note at the top of this doc).
 
 ## Phase-by-phase
 
@@ -65,7 +76,7 @@ Galaxy (2014)** (both decoys). Copy:
 Button: "NEXT ▶" (taps the highlighted candidate for the player, same
 pattern as chart-ladder's scripted `handleConfirmTile`)
 
-**explain-correct** — 5s-minimum modal. Copy:
+**explain-correct** — modal, no minimum delay. Copy:
 
 > **Correct!** Kill Bill: Volume 1 connects to Pulp Fiction in two ways:
 > - Same director — Quentin Tarantino
@@ -74,7 +85,7 @@ pattern as chart-ladder's scripted `handleConfirmTile`)
 > +1 point. All matching connections are always shown, even when there's
 > more than one — you don't have to guess which one "counts."
 
-Button disabled for 5s, then "NEXT ▶"
+Button: "NEXT ▶"
 
 **pick-wrong** — Board shows **Kill Bill: Volume 1** on top (now the top
 of the stack after the previous correct pick). Three candidates: **Kill
@@ -87,7 +98,7 @@ Future** — on purpose. Copy:
 
 Button: "SEE WHAT HAPPENS ▶" (taps the decoy)
 
-**explain-wrong** — 5s-minimum modal. Copy:
+**explain-wrong** — modal, no minimum delay. Copy:
 
 > **Not quite.** Back to the Future doesn't connect to Kill Bill: Volume 1
 > by anything in the data. The correct movie, **Kill Bill: Volume 2**, has
@@ -100,7 +111,7 @@ Button: "SEE WHAT HAPPENS ▶" (taps the decoy)
 >
 > **1/5 strikes used.** Miss five and the run ends — more on that shortly.
 
-Button disabled for 5s, then "CONTINUE ▶"
+Button: "CONTINUE ▶"
 
 **milestone** — Board shows a mocked/animated preview of a 5-tile stack
 scrolling off-screen, leaving only the top tile. Copy:
@@ -117,17 +128,53 @@ scrolling off-screen, leaving only the top tile. Copy:
 
 Button: "NEXT ▶"
 
-**betting** — Static explainer (no live demo — betting depends on reaching
-a real checkpoint, which the scripted tutorial doesn't play out fully).
-Copy:
+**betting-intro** — Board still shows the 3-tile Pulp Fiction → Kill Bill
+Vol. 1 → Kill Bill Vol. 2 stack from the milestone phase (not actually
+cleared/re-scrolled — no slide animation in the tutorial). Copy:
 
 > Right after you clear a group of 5, you'll sometimes get the option to
-> bet — you can decline any time. A bet stakes one of your strikes on your
-> very next pick:
+> bet — you can decline any time. Let's see it in action.
+
+Button: "NEXT ▶"
+
+**betting-offer** — Board adds a non-interactive preview of the real
+bet-offer screen (`App.tsx`'s actual `betOffer` UI: "💰 WANT TO BET?" +
+NO THANKS / BET) below the stack. The buttons are visual only — the
+tutorial's own panel button below drives advancement, same pattern as
+every other scripted phase, so the demo doesn't need real branching for a
+decline path. Copy:
+
+> A bet stakes one of your strikes on your very next pick:
 > - **Win** → a big bonus payout on top of normal scoring
 > - **Lose** → that miss costs you 2 strikes instead of 1
 >
-> You get one bet offer per group of 5, so use it when you're confident.
+> Let's take the bet.
+
+Button: "TAKE THE BET ▶"
+
+**betting-round** — Board shows the same 3-tile stack, a
+"💰 BET ROUND — WIN: +10 PTS · LOSE: −2 STRIKES" banner, and 3 gold-bordered
+candidates continuing the Tarantino chain past Kill Bill Vol. 2: **Jackie
+Brown (1997)** (correct, highlighted blue on top of the gold bet-round
+marking), **Titanic (1997)**, **The Sound of Music (1965)** (both decoys,
+zero connection to Kill Bill Vol. 2 — see the verified-connections table
+below). Copy:
+
+> Bet rounds are marked gold so the raised stakes are never a surprise.
+> Here, Jackie Brown (highlighted) is the right pick.
+
+Button: "SEE WHAT HAPPENS ▶"
+
+**betting-win** — modal, no minimum delay, reuses the betting-round board.
+Copy:
+
+> **Correct!** Jackie Brown connects to Kill Bill: Volume 2 by:
+> - Same director — Quentin Tarantino
+> - Same cast member — Michael Bowen, Quentin Tarantino, Samuel L. Jackson
+> - Same screenwriter — Quentin Tarantino
+>
+> +10 points — bet won! Betting pays off big when you're confident.
+> Remember: losing a bet costs 2 strikes instead of 1.
 
 Button: "NEXT ▶"
 
@@ -139,9 +186,10 @@ Button: "NEXT ▶"
 
 Button: "NEXT ▶"
 
-**done** — Full mini chain review of the 3 scripted rounds (Pulp Fiction →
-Kill Bill: Volume 1 → Kill Bill: Volume 2), same pattern as chart-ladder's
-"done" phase. Copy:
+**done** — Full mini chain review of the 4 scripted rounds (Pulp Fiction →
+Kill Bill: Volume 1 → Kill Bill: Volume 2 → Jackie Brown, the last hop
+added by the betting-round demo), same pattern as chart-ladder's "done"
+phase. Copy:
 
 > That's the idea! Tap 🔗 VIEW CONNECTION CHAIN any time during a real run
 > to review your path like this again.
@@ -160,6 +208,11 @@ Button: "START PLAYING"
 | Pulp Fiction | Guardians of the Galaxy | *(none)* | — |
 | Kill Bill: Volume 1 | Back to the Future | *(none)* | — |
 | Kill Bill: Volume 1 | Home Alone | *(none)* | — |
+| Kill Bill: Volume 2 | Jackie Brown | Quentin Tarantino | director |
+| Kill Bill: Volume 2 | Jackie Brown | Michael Bowen, Quentin Tarantino, Samuel L. Jackson | cast |
+| Kill Bill: Volume 2 | Jackie Brown | Quentin Tarantino | screenwriter |
+| Kill Bill: Volume 2 | Titanic | *(none)* | — |
+| Kill Bill: Volume 2 | The Sound of Music | *(none)* | — |
 
 **Correction, 2026-07-30:** this table originally listed The Lord of the
 Rings: The Return of the King as the second Kill Bill Vol. 1 decoy,
@@ -175,12 +228,16 @@ closing note anticipated ("have the real round-generation engine finalize
 those... rather than hand-picking further") — it just hit an earlier round
 than expected.
 
-Rounds 4–5 (needed to actually complete the first 5-tile milestone) aren't
-hand-verified here — the pattern would continue through more of Tarantino's
-filmography (e.g. → Jackie Brown, itself verified against Kill Bill Vol. 2:
-shared director, shared cast — Samuel L. Jackson, Michael Bowen). Worth
-having the real round-generation engine finalize those once it exists
-rather than hand-picking further.
+**Round 4 verified and shipped, 2026-07-31:** Kill Bill Vol. 2 → Jackie
+Brown is now the betting-round demo's scripted correct pick (see above),
+verified against the real `data/connections.json.gz` (director, cast,
+screenwriter — see table above), decoys Titanic and The Sound of Music
+verified zero-connection. Round 5 (needed to actually complete the
+first 5-tile milestone, which the tutorial still doesn't play out to
+completion) remains unverified — the pattern would continue through more
+of Tarantino's filmography. Worth having the real round-generation engine
+finalize that one too if the tutorial is ever extended to a full milestone
+clear, rather than hand-picking further.
 
 ## Genre dropped as a connection type (resolved 2026-07-30)
 
