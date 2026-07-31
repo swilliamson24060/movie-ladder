@@ -146,6 +146,22 @@ from chart-ladder, which does have a separate connection-naming bonus step
 (see `TutorialModal.tsx`/`HowToPlayModal.tsx`) — movie-ladder drops that
 entirely.
 
+**No movie repeats within a run (bug fixed 2026-07-31).** `MovieLadder.
+buildRound()` in `movieLadder.ts` always took an `exclude` set, but
+`App.tsx` never passed one — every round only excluded its own current
+movie, not the run's history, so the "correct" connection could
+legitimately loop back to a movie already placed earlier on the ladder
+(a real player report: Jonah Hex → Pathology → Jonah Hex — Pathology's
+actual connections back to Jonah Hex are valid, so nothing was
+malfunctioning at the connections-data level, only at the round-building
+level). Fixed by threading a `history: Set<number>` through every
+`buildRound()` call in `App.tsx`, growing on each correct pick and
+surviving milestone clears (only `restart()` resets it) — this also
+stops a repeat from ever appearing as a *decoy*, not just as the correct
+pick, since `buildRound`'s exclude set already governs both. Verified via
+a temporary debug hook driving 40+ rounds: zero repeats, and the live
+round's candidates never overlapped the accumulated history.
+
 **Every pick shows a modal, minimum 5 seconds, dismiss by tap only after
 that** (not a hard auto-dismiss, not instantly skippable — chart-ladder's
 modals have no minimum-display precedent, this is new UX for this game).
