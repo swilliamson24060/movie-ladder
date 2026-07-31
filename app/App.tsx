@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -30,22 +30,6 @@ const BET_LOSE_STRIKES = 2;
 // feature, not part of CLAUDE.md's original spec).
 const FLOORS_BEFORE_BETTING = 1;
 
-export default function App() {
-  const game = useMemo(() => new MovieLadder(connectionsData as any), []);
-  const [showTutorial, setShowTutorial] = useState(true);
-
-  return (
-    <View style={styles.app}>
-      <StatusBar style="light" />
-      {showTutorial ? (
-        <TutorialScreen game={game} onDone={() => setShowTutorial(false)} />
-      ) : (
-        <GameScreen game={game} />
-      )}
-    </View>
-  );
-}
-
 interface PendingResult {
   correct: boolean;
   pickedId: number;
@@ -55,48 +39,182 @@ interface PendingResult {
   isBet: boolean;
 }
 
-function GameScreen({ game }: { game: MovieLadder }) {
-  const [stack, setStack] = useState<number[]>(() => [game.randomMovie()]);
+// Save-game mechanic: there's only ever one run in flight, so "saving" just
+// means the current run survives a reload/tab close, not an explicit save
+// slot -- every state change re-persists the whole snapshot, and starting a
+// new run (restart()) naturally overwrites it with the fresh state.
+const SAVE_KEY = 'movie-ladder:save-v1';
+const SAVE_VERSION = 1;
+
+interface SavedGame {
+  version: number;
+  stack: number[];
+  history: number[];
+  score: number;
+  strikes: number;
+  groupHadStrike: boolean;
+  floorScore: number;
+  floorsCompleted: number;
+  betOffer: boolean;
+  isBetRound: boolean;
+  milestone: boolean;
+  gameOver: boolean;
+  round: Round | null;
+  pendingResult: PendingResult | null;
+  // Every movie ID actually displayed by this snapshot (stack, round
+  // candidates, pending-result movies), paired with its title at save time.
+  // Movie IDs are just array positions (see connections_generator.py) --
+  // they can shift if the connections dataset is ever regenerated, even
+  // without the movie count changing. Re-checked on load so a stale save
+  // is discarded rather than silently showing the wrong movie under an
+  // old ID.
+  titleCheck: Record<number, string>;
+}
+
+function collectDisplayedIds(snapshot: Omit<SavedGame, 'version' | 'titleCheck'>): number[] {
+  const ids = new Set<number>(snapshot.stack);
+  if (snapshot.round) {
+    ids.add(snapshot.round.currentId);
+    snapshot.round.candidateIds.forEach((id) => ids.add(id));
+  }
+  if (snapshot.pendingResult) {
+    ids.add(snapshot.pendingResult.pickedId);
+    ids.add(snapshot.pendingResult.correctId);
+    ids.add(snapshot.pendingResult.previousId);
+  }
+  return [...ids];
+}
+
+function loadSavedGame(game: MovieLadder): SavedGame | null {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SavedGame;
+    if (parsed.version !== SAVE_VERSION) return null;
+    if (!Array.isArray(parsed.stack) || parsed.stack.length === 0) return null;
+    for (const [idStr, title] of Object.entries(parsed.titleCheck ?? {})) {
+      const id = Number(idStr);
+      if (id < 0 || id >= game.count || game.movie(id).title !== title) return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveGame(game: MovieLadder, snapshot: Omit<SavedGame, 'version' | 'titleCheck'>): void {
+  try {
+    const titleCheck: Record<number, string> = {};
+    for (const id of collectDisplayedIds(snapshot)) titleCheck[id] = game.movie(id).title;
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ ...snapshot, version: SAVE_VERSION, titleCheck }));
+  } catch {
+    // Storage unavailable (private browsing, quota, etc.) -- the run just
+    // won't survive a reload, not worth surfacing to the player over.
+  }
+}
+
+export default function App() {
+  const game = useMemo(() => new MovieLadder(connectionsData as any), []);
+  const [savedGame] = useState<SavedGame | null>(() => loadSavedGame(game));
+  // Skip the tutorial on reload if there's a run to resume -- a returning
+  // player doesn't need the walkthrough again just because they refreshed.
+  const [showTutorial, setShowTutorial] = useState(() => savedGame === null);
+
+  return (
+    <View style={styles.app}>
+      <StatusBar style="light" />
+      {showTutorial ? (
+        <TutorialScreen game={game} onDone={() => setShowTutorial(false)} />
+      ) : (
+        <GameScreen game={game} savedGame={savedGame} />
+      )}
+    </View>
+  );
+}
+
+function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGame | null }) {
+  const [stack, setStack] = useState<number[]>(() => savedGame?.stack ?? [game.randomMovie()]);
   const currentId = stack[stack.length - 1];
   // Every movie placed on the ladder this run, across every floor -- never
   // reset by a milestone clear (only by restart()). Passed as buildRound's
   // exclude set so a connection can never loop back to an earlier rung
   // (e.g. A -> B -> A): without this, buildRound only excluded the round's
   // own current movie, and B's real connections legitimately include A.
-  const [history, setHistory] = useState<Set<number>>(() => new Set(stack));
-  const [round, setRound] = useState<Round | null>(() => game.buildRound(currentId, history));
+  const [history, setHistory] = useState<Set<number>>(() => new Set(savedGame?.history ?? stack));
+  const [round, setRound] = useState<Round | null>(() =>
+    savedGame ? savedGame.round : game.buildRound(currentId, history)
+  );
   // Set the instant a candidate is tapped, cleared once the player dismisses
   // the result modal -- every pick gets this, right or wrong, per the "more
   // prominent notice on correctness" request. Advancing the stack/round
   // waits for that dismissal (see confirmPick), so the connection is always
   // shown before the board moves on.
-  const [pendingResult, setPendingResult] = useState<PendingResult | null>(null);
+  const [pendingResult, setPendingResult] = useState<PendingResult | null>(
+    () => savedGame?.pendingResult ?? null
+  );
   // True once a group of 5 is showing, from the pick that completed it until
   // the player taps CONTINUE -- no round is built for the 6th movie until
   // the pause is dismissed and the slide-down finishes (CLAUDE.md section
   // 5b's milestone scroll-off).
-  const [milestone, setMilestone] = useState(false);
+  const [milestone, setMilestone] = useState(() => savedGame?.milestone ?? false);
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  const [score, setScore] = useState(0);
-  const [strikes, setStrikes] = useState(0);
+  const [score, setScore] = useState(() => savedGame?.score ?? 0);
+  const [strikes, setStrikes] = useState(() => savedGame?.strikes ?? 0);
   // Whether any wrong pick has happened in the group of 5 currently being
   // built -- resets every time a floor completes. Decides that floor's
   // +10 no-strike bonus, independent of the run's total strike count.
-  const [groupHadStrike, setGroupHadStrike] = useState(false);
+  const [groupHadStrike, setGroupHadStrike] = useState(() => savedGame?.groupHadStrike ?? false);
   // Points the most recently completed floor earned, shown in the
   // milestone banner. Only meaningful while `milestone` is true.
-  const [floorScore, setFloorScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
+  const [floorScore, setFloorScore] = useState(() => savedGame?.floorScore ?? 0);
+  const [gameOver, setGameOver] = useState(() => savedGame?.gameOver ?? false);
   // How many floors have been completed this run -- gates the bet offer
   // (skips after floor 1) rather than tracking a separate boolean.
-  const [floorsCompleted, setFloorsCompleted] = useState(0);
+  const [floorsCompleted, setFloorsCompleted] = useState(() => savedGame?.floorsCompleted ?? 0);
   // True while the bet-offer step (BET / NO THANKS) is showing, right
   // after a floor's slide-down finishes and before the next round builds.
-  const [betOffer, setBetOffer] = useState(false);
+  const [betOffer, setBetOffer] = useState(() => savedGame?.betOffer ?? false);
   // True only for the single round the player staked a bet on -- reset the
   // instant that round resolves, win or lose.
-  const [isBetRound, setIsBetRound] = useState(false);
+  const [isBetRound, setIsBetRound] = useState(() => savedGame?.isBetRound ?? false);
+
+  // Auto-save: re-persist the whole run on every change so a reload/close
+  // resumes exactly where the player left off (see the SavedGame type's
+  // docs above for why movie IDs are re-verified on load, not just replayed
+  // blindly).
+  useEffect(() => {
+    saveGame(game, {
+      stack,
+      history: [...history],
+      score,
+      strikes,
+      groupHadStrike,
+      floorScore,
+      floorsCompleted,
+      betOffer,
+      isBetRound,
+      milestone,
+      gameOver,
+      round,
+      pendingResult,
+    });
+  }, [
+    game,
+    stack,
+    history,
+    score,
+    strikes,
+    groupHadStrike,
+    floorScore,
+    floorsCompleted,
+    betOffer,
+    isBetRound,
+    milestone,
+    gameOver,
+    round,
+    pendingResult,
+  ]);
 
   function pick(candidateId: number) {
     if (!round) return;
