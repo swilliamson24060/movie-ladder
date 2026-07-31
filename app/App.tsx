@@ -444,11 +444,12 @@ const styles = StyleSheet.create({
     maxWidth: MAX_BOARD_WIDTH,
     alignSelf: 'center',
   },
-  // 25% is ~75% of the ~33%-per-tile width the old flex:1/3-way-split gave
-  // each candidate, spread across the row with space-between rather than
-  // packed edge-to-edge.
+  // Wider than an even 1/3-way split (33%) would look with space-between's
+  // full gap, but not packed edge-to-edge either -- 30% keeps a slim gap
+  // between tiles while the row's own maxWidth/alignSelf (above) still
+  // pins the first and last tile's outer edges to the board's edges.
   candidateSlot: {
-    width: '25%',
+    width: '30%',
   },
   milestoneBanner: {
     marginTop: 16,
