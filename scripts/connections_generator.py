@@ -91,6 +91,50 @@ MULTI_VALUE_CONNECTIONS = {
     "same_based_on": "based_on",
 }
 
+# same_award is restricted to these 10 major bodies (decided 2026-07-31) --
+# Wikidata's raw awards column carries 700+ distinct values, most of them
+# single-digit-movie regional/trade awards (AVN, AACTA International, a
+# Danish screenplay guild, etc.) that are too obscure to read as "these two
+# movies are meaningfully connected." Prefixes/substrings below, checked
+# against the exact raw award string (see films_enrich.py):
+#   - startswith("Academy Award") or endswith("Academy Award") -- the
+#     endswith half catches "Special Achievement Academy Award", which
+#     doesn't start with the phrase. Deliberately does NOT match on
+#     "Academy Award" as a bare substring, which would also catch e.g.
+#     "Polish Academy Award for Best Editing" (a different, national body).
+#   - "cannes" as a case-insensitive substring, not just an exact-name
+#     prefix, since two legitimate Cannes-associated prizes (the FIPRESCI
+#     critics' prize and the Ecumenical Jury prize) aren't named
+#     "Cannes Film Festival Award for ..." -- they still are Cannes prizes.
+#   - Golden Globe is startswith("Golden Globe Award") specifically, not
+#     "Golden Globe" -- "Golden Globe (Portugal) for Best Film" is an
+#     unrelated Portuguese award that happens to share the English name.
+#   - Writers Guild is startswith("Writers Guild of America") specifically,
+#     not "Writers Guild" -- excludes "Danish Writers Guild Best Screenplay
+#     Award," a different national guild, not the WGA the ask meant.
+# Verified against the real shipped connections.json.gz (2026-07-31): 129
+# of 712 raw award values survive this filter.
+MAJOR_AWARD_PREFIXES = (
+    "American Film Institute",
+    "BAFTA",
+    "British Academy Film Awards",
+    "Golden Raspberry",
+    "Palme d'Or",
+    "Screen Actors Guild",
+    "Sundance",
+    "Writers Guild of America",
+)
+
+
+def is_major_award(name):
+    if name.startswith("Academy Award") or name.endswith("Academy Award"):
+        return True
+    if "cannes" in name.lower():
+        return True
+    if name.startswith("Golden Globe Award"):
+        return True
+    return name.startswith(MAJOR_AWARD_PREFIXES)
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -123,6 +167,8 @@ def main():
 
             for conn_type, column in MULTI_VALUE_CONNECTIONS.items():
                 for value in split_multi(row.get(column, "")):
+                    if conn_type == "same_award" and not is_major_award(value):
+                        continue
                     add(groups, conn_type, value, movie_id)
 
             if year:

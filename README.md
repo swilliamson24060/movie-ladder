@@ -83,6 +83,18 @@ screenwriter, same composer, same production company, same country, same
 award, same franchise/series, same source material (`based_on`), same
 release year, shared title word.
 
+**Same award is restricted to 10 major bodies** (decided 2026-07-31):
+Academy Awards, American Film Institute, BAFTA/British Academy Film
+Awards, Cannes, Golden Globe, Golden Raspberry, Palme d'Or, Screen Actors
+Guild, Sundance, and Writers Guild of America. Wikidata's raw awards field
+carries 700+ distinct values, most single-digit-movie regional or trade
+awards (AVN, AACTA International, a Danish screenwriting guild, etc.) too
+obscure to read as a meaningful "these movies connect" moment. See
+`connections_generator.py`'s `is_major_award()` for the exact matching
+rules (a few name collisions with unrelated same-named regional awards —
+e.g. a Portuguese "Golden Globe" and a Polish "Academy Award" — are
+explicitly excluded).
+
 Genre was considered and **dropped** — Wikidata's genre tagging is too
 broad to reliably build decoys against (see the "Genre tags may be too
 broad" finding in `CLAUDE.md` section 6). Films routinely carry a dozen-plus

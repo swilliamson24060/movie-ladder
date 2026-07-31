@@ -301,6 +301,37 @@ via director/cast/screenwriter, Kill Bill Vol. 1 → Vol. 2 still connects
 via director/cast/screenwriter/series, and both decoy pairs remain at zero
 connections — no tutorial changes were needed either time.
 
+**`same_award` restricted to 10 major bodies (decided 2026-07-31).** The
+raw `awards` column carries 700+ distinct Wikidata award values; most are
+single-digit-movie regional or trade awards (AVN, AACTA International, a
+Danish screenwriting guild, etc.) too obscure to read as a meaningful "these
+movies connect" moment — a real risk in the same family as `same_country`'s
+broadness problem above, just in the opposite direction (too narrow/obscure
+per value, rather than too broad). Restricted in `connections_generator.py`
+(`is_major_award()`) to only: Academy Awards, American Film Institute,
+BAFTA/British Academy Film Awards, Cannes, Golden Globe, Golden Raspberry,
+Palme d'Or, Screen Actors Guild, Sundance, and Writers Guild of America.
+Matching is prefix/substring-based per body, not a simple keyword search,
+because several raw values are name collisions with unrelated same-named
+regional awards that must NOT match: "Golden Globe (Portugal) for Best
+Film" (a Portuguese award, not the Hollywood Foreign Press one — matched
+only by `startswith("Golden Globe Award")`, not "Golden Globe"), "Polish
+Academy Award for Best Editing" (a different national academy — Academy
+Award matching requires the phrase at the start or end of the string, not
+as a bare substring), and "Danish Writers Guild Best Screenplay Award"
+(matched only by `startswith("Writers Guild of America")`, deliberately
+narrower than the literal ask's "Writers Guild" wording, since every other
+item in that list was a specific major/international body, not "any
+national guild" — flagged as a judgment call in the response, not silently
+assumed). Verified against the real dataset: 129 of 712 raw award values
+survive the filter. Regenerated `data/connections.json(.gz)` and copied to
+`app/assets/data/connections.json` (the file the shipped app actually
+imports — this is the one that must stay in sync, not just the `data/`
+copies). Impact on graph connectivity: movies with zero remaining active
+connection go from 275 (1.6%, after the `same_release_year` removal above)
+to 317 (1.86%) of the 17,009-film dataset — same small-but-real tradeoff
+class as every other connection-type narrowing decision in this section.
+
 **Tutorial:** full phase-by-phase script (with real, hand-verified example
 movies) is in `TUTORIAL_FLOW.md`. Implemented (see section 9's punch
 list) and since extended three times, 2026-07-31:
