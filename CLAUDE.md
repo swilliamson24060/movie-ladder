@@ -3,7 +3,7 @@
 Working notes for two related connection-chain games. Written to be read cold
 by a person or by Claude picking this up in a new session.
 
-Last updated: 2026-07-29
+Last updated: 2026-07-31
 
 ---
 
@@ -196,6 +196,52 @@ strike:
 - Betting is allowed even at 2 strikes already (where a loss guarantees
   game over) — decided as an intentional high-drama all-in moment, not
   blocked. No special-case code needed for that scenario.
+
+**Betting — implemented 2026-07-30/31.** The spec above was decided but
+unbuilt; the following implementation-level questions weren't covered by
+it and were resolved via an `AskUserQuestion` interview immediately before
+building (`app/App.tsx`, commit `77c6c5a`):
+- **Frequency:** skip the bet offer after the very first floor
+  (`FLOORS_BEFORE_BETTING = 1` — offer starts from floor 2 onward), so a
+  new player gets one clean, stakes-free floor before betting shows up.
+  Not a number the original spec fixed either way.
+- **Presentation:** the offer is its own screen — a separate `betOffer`
+  state, shown *after* the milestone banner's slide-down finishes and
+  *before* the next round builds — rather than folding BET/NO THANKS
+  buttons into the milestone banner itself or the first candidate round.
+- **Visual marking:** a bet round is visibly distinct while in progress —
+  gold cell borders on all 3 candidates (`MovieCell`'s new `'bet'`
+  `CellState`, `colors.yellow`) plus a `💰 BET ROUND` banner above the
+  candidates — so the raised stakes are never a surprise at result time.
+- **High-strikes confirmation:** no extra confirmation step for accepting
+  a bet at 2+ strikes, even though a loss there guarantees game over —
+  matches the original spec's "no special-case code" call, reconfirmed
+  rather than revisited.
+
+Scoring/strikes mechanics as shipped: win pays `BET_WIN_MULTIPLIER = 10`
+points on that one pick (instead of the usual +1); loss costs
+`BET_LOSE_STRIKES = 2` strikes (instead of the usual 1), clamped to
+`MAX_STRIKES` so the strike counter never displays past 5/5. The result
+modal calls out both outcomes explicitly ("— bet won!" / "(bet lost — 2
+strikes)"), and `isBetRound` resets the instant that one staked pick
+resolves, win or lose — a bet never carries over to a second pick.
+
+**Bug found and fixed during verification:** `continueAfterMilestone()`
+originally decided whether to offer a bet by reading `floorsCompleted`
+from React state *inside* `Animated.timing(...).start(callback)`'s
+completion handler. On web, `useNativeDriver: true` silently falls back
+to a JS/rAF-driven animation, and state updates made from within that
+callback were observed to not reliably take effect (confirmed via a
+temporary `window.__continueAfterMilestone`/`__state` debug hook: the
+callback demonstrably ran, but `setBetOffer(true)`/`setMilestone(false)`
+calls inside it didn't change subsequent renders). Fix: the
+`floorsCompleted > FLOORS_BEFORE_BETTING` decision is now computed
+synchronously, in direct response to the tap, *before*
+`Animated.timing(...).start(...)` is even called, and captured in a
+plain local (`offerBet`) that the callback just reads — sidesteps the
+unreliable-setState-in-callback issue rather than root-causing it
+further. Worth remembering if another delayed `Animated` callback in this
+app ever needs to make a state-dependent decision.
 
 **Decoy-selection requirement (the actual engineering delta from chart-
 ladder).** `round_selector.py`'s current `ChartLadder.build_round()` picks
@@ -481,13 +527,26 @@ on-disk caches (`cache/`, `cache_films/`). Full music run takes a few hours.
   `window.__round`/`window.__state` debug hook to read the live
   `correctId` and confirm state transitions precisely, rather than
   clicking blind and hoping. Removed before shipping.
-- [ ] Betting is still not implemented -- it wasn't asked for and needs its
-  own UI (bet offer prompt, staking a strike, double-strike-loss path).
-  The two numbers below remain unverified for exactly that reason.
-- [ ] Two numbers were set as reasonable defaults, not playtested — revisit
-  if they feel off once betting exists to test them against: bet payout is
-  10x that round's point value (now a real, known number per pick); bet
-  timing/frequency is once per completed 5-tile floor.
+- [x] Betting implemented — bet-offer screen (BET / NO THANKS) shown as
+  its own step after a completed floor's slide-down (skipped for floor 1),
+  gold-marked bet-round candidates, win/loss scoring and strike-clamping,
+  result-modal callouts. See section 5b's "Betting — implemented" entry
+  for the full implementation-level decisions (frequency, presentation,
+  visual marking) and the `Animated.timing` state-update bug found and
+  fixed along the way. Verified end-to-end in-browser via a temporary
+  `window.__pick`/`__confirmPick`/`__state` debug hook (same pattern as
+  the scoring/strikes verification above, removed before shipping):
+  floor 1 → no bet offer; floor 2 and 3 → bet offer appears; NO THANKS →
+  normal round; BET+win → +10 points; BET+lose → +0 points, 2 strikes;
+  strikes clamp at 5/5 with no overflow; a bet loss landing on the same
+  pick that completes a floor still shows the floor's bonus before going
+  straight to game over. Committed as `77c6c5a`, deployed and confirmed
+  live.
+- [ ] The two numbers below are still not playtested with real users —
+  they're implementable and testable now that betting exists (they
+  weren't before), but "feels right" hasn't been evaluated against actual
+  play: bet payout is 10x that round's point value; bet timing/frequency
+  is once per completed 5-tile floor (skipping floor 1).
 
 **Chart Ladder (music) — still open, not touched by the movie-ladder work:**
 - Tune tile selection weights using the generator's stats table —
