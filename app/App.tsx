@@ -58,7 +58,13 @@ interface PendingResult {
 function GameScreen({ game }: { game: MovieLadder }) {
   const [stack, setStack] = useState<number[]>(() => [game.randomMovie()]);
   const currentId = stack[stack.length - 1];
-  const [round, setRound] = useState<Round | null>(() => game.buildRound(currentId));
+  // Every movie placed on the ladder this run, across every floor -- never
+  // reset by a milestone clear (only by restart()). Passed as buildRound's
+  // exclude set so a connection can never loop back to an earlier rung
+  // (e.g. A -> B -> A): without this, buildRound only excluded the round's
+  // own current movie, and B's real connections legitimately include A.
+  const [history, setHistory] = useState<Set<number>>(() => new Set(stack));
+  const [round, setRound] = useState<Round | null>(() => game.buildRound(currentId, history));
   // Set the instant a candidate is tapped, cleared once the player dismisses
   // the result modal -- every pick gets this, right or wrong, per the "more
   // prominent notice on correctness" request. Advancing the stack/round
@@ -120,6 +126,9 @@ function GameScreen({ game }: { game: MovieLadder }) {
     // The chain always advances, right or wrong (CLAUDE.md section 5b).
     const newStack = [...stack, correctId];
     setStack(newStack);
+    const newHistory = new Set(history);
+    newHistory.add(correctId);
+    setHistory(newHistory);
 
     const floorComplete = newStack.length >= MAX_STACK_TILES;
     if (floorComplete) {
@@ -150,7 +159,7 @@ function GameScreen({ game }: { game: MovieLadder }) {
       setRound(null);
       setMilestone(true);
     } else {
-      setRound(game.buildRound(correctId));
+      setRound(game.buildRound(correctId, newHistory));
     }
   }
 
@@ -174,7 +183,7 @@ function GameScreen({ game }: { game: MovieLadder }) {
       if (offerBet) {
         setBetOffer(true);
       } else {
-        setRound(game.buildRound(topId));
+        setRound(game.buildRound(topId, history));
       }
     });
   }
@@ -182,13 +191,15 @@ function GameScreen({ game }: { game: MovieLadder }) {
   function resolveBetOffer(accepted: boolean) {
     setBetOffer(false);
     setIsBetRound(accepted);
-    setRound(game.buildRound(stack[stack.length - 1]));
+    setRound(game.buildRound(stack[stack.length - 1], history));
   }
 
   function restart() {
     const startId = game.randomMovie();
+    const startHistory = new Set([startId]);
     setStack([startId]);
-    setRound(game.buildRound(startId));
+    setHistory(startHistory);
+    setRound(game.buildRound(startId, startHistory));
     setPendingResult(null);
     setMilestone(false);
     setScore(0);
