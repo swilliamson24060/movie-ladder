@@ -12,13 +12,23 @@ import { colors } from './src/theme';
 
 const SLIDE_DURATION_MS = 450;
 
-// CLAUDE.md section 5b's scoring/strikes spec, implemented here (betting is
-// not -- it wasn't asked for and needs its own UI):
+// CLAUDE.md section 5b's scoring/strikes/betting spec, implemented here:
 // +1 point per correct tile; +5 for completing a 5-tile floor; +10 more on
 // top of that if the floor had zero strikes; 5 strikes ends the run.
+// Betting: offered once per completed floor (from floor 2 onward -- see
+// the interview this was built from, not a CLAUDE.md-decided number) as a
+// stake on the very next pick. Win pays 10x that pick's normal point
+// value; lose costs 2 strikes instead of 1. No blocking even when a loss
+// would end the run -- CLAUDE.md is explicit that's intentional.
 const MAX_STRIKES = 5;
 const FLOOR_BASE_BONUS = 5;
 const FLOOR_NO_STRIKE_BONUS = 10;
+const BET_WIN_MULTIPLIER = 10;
+const BET_LOSE_STRIKES = 2;
+// Skip the bet offer after the very first floor, so a new player gets one
+// clean floor before stakes show up (decided in the interview for this
+// feature, not part of CLAUDE.md's original spec).
+const FLOORS_BEFORE_BETTING = 1;
 
 export default function App() {
   const game = useMemo(() => new MovieLadder(connectionsData as any), []);
@@ -42,6 +52,7 @@ interface PendingResult {
   correctId: number;
   previousId: number;
   matches: Record<string, string[]>;
+  isBet: boolean;
 }
 
 function GameScreen({ game }: { game: MovieLadder }) {
@@ -71,6 +82,15 @@ function GameScreen({ game }: { game: MovieLadder }) {
   // milestone banner. Only meaningful while `milestone` is true.
   const [floorScore, setFloorScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
+  // How many floors have been completed this run -- gates the bet offer
+  // (skips after floor 1) rather than tracking a separate boolean.
+  const [floorsCompleted, setFloorsCompleted] = useState(0);
+  // True while the bet-offer step (BET / NO THANKS) is showing, right
+  // after a floor's slide-down finishes and before the next round builds.
+  const [betOffer, setBetOffer] = useState(false);
+  // True only for the single round the player staked a bet on -- reset the
+  // instant that round resolves, win or lose.
+  const [isBetRound, setIsBetRound] = useState(false);
 
   function pick(candidateId: number) {
     if (!round) return;
@@ -80,18 +100,21 @@ function GameScreen({ game }: { game: MovieLadder }) {
       correctId: round.correctId,
       previousId: currentId,
       matches: round.matches,
+      isBet: isBetRound,
     });
   }
 
   function confirmPick() {
     if (!pendingResult) return;
-    const { correctId, correct } = pendingResult;
+    const { correctId, correct, isBet } = pendingResult;
     setPendingResult(null);
+    setIsBetRound(false); // a bet only ever stakes the one pick right after it's accepted
 
-    const newStrikes = correct ? strikes : strikes + 1;
+    const strikeCost = isBet ? BET_LOSE_STRIKES : 1;
+    const newStrikes = correct ? strikes : Math.min(MAX_STRIKES, strikes + strikeCost);
     const thisGroupHadStrike = groupHadStrike || !correct;
 
-    if (correct) setScore((s) => s + 1);
+    if (correct) setScore((s) => s + (isBet ? BET_WIN_MULTIPLIER : 1));
     if (!correct) setStrikes(newStrikes);
 
     // The chain always advances, right or wrong (CLAUDE.md section 5b).
@@ -104,6 +127,7 @@ function GameScreen({ game }: { game: MovieLadder }) {
       setScore((s) => s + bonus);
       setFloorScore(bonus);
       setGroupHadStrike(false);
+      setFloorsCompleted((n) => n + 1);
     } else {
       setGroupHadStrike(thisGroupHadStrike);
     }
@@ -120,8 +144,9 @@ function GameScreen({ game }: { game: MovieLadder }) {
 
     if (floorComplete) {
       // Pause on a full board rather than building the next round --
-      // continueAfterMilestone() builds it once the player has seen the
-      // completed group and the slide-down has cleared it away.
+      // continueAfterMilestone() builds it (or offers a bet first) once
+      // the player has seen the completed group and the slide-down has
+      // cleared it away.
       setRound(null);
       setMilestone(true);
     } else {
@@ -130,6 +155,12 @@ function GameScreen({ game }: { game: MovieLadder }) {
   }
 
   function continueAfterMilestone() {
+    // Decided synchronously, in direct response to the tap, rather than
+    // re-read from state inside the .start() callback below -- state
+    // setters called from that delayed callback were observed not to take
+    // effect reliably on web (useNativeDriver falls back to a JS/rAF-driven
+    // animation there). Capturing a plain boolean here sidesteps it.
+    const offerBet = floorsCompleted > FLOORS_BEFORE_BETTING;
     Animated.timing(slideAnim, {
       toValue: 1,
       duration: SLIDE_DURATION_MS,
@@ -137,10 +168,21 @@ function GameScreen({ game }: { game: MovieLadder }) {
     }).start(() => {
       const topId = stack[stack.length - 1];
       setStack([topId]);
-      setRound(game.buildRound(topId));
       setMilestone(false);
       slideAnim.setValue(0);
+
+      if (offerBet) {
+        setBetOffer(true);
+      } else {
+        setRound(game.buildRound(topId));
+      }
     });
+  }
+
+  function resolveBetOffer(accepted: boolean) {
+    setBetOffer(false);
+    setIsBetRound(accepted);
+    setRound(game.buildRound(stack[stack.length - 1]));
   }
 
   function restart() {
@@ -154,6 +196,9 @@ function GameScreen({ game }: { game: MovieLadder }) {
     setGroupHadStrike(false);
     setFloorScore(0);
     setGameOver(false);
+    setFloorsCompleted(0);
+    setBetOffer(false);
+    setIsBetRound(false);
     slideAnim.setValue(0);
   }
 
@@ -197,8 +242,36 @@ function GameScreen({ game }: { game: MovieLadder }) {
               <Text style={styles.buttonText}>CONTINUE ▶</Text>
             </Pressable>
           </View>
+        ) : betOffer ? (
+          <View style={styles.milestoneBanner}>
+            <Text style={styles.milestoneText}>💰 WANT TO BET?</Text>
+            <Text style={styles.betLine}>Stake a strike on your very next pick:</Text>
+            <Text style={styles.betLine}>
+              Win → +{BET_WIN_MULTIPLIER} points instead of +1
+            </Text>
+            <Text style={styles.betLine}>
+              Lose → costs {BET_LOSE_STRIKES} strikes instead of 1
+            </Text>
+            <View style={styles.betButtonRow}>
+              <Pressable style={styles.betButtonSlot} onPress={() => resolveBetOffer(false)}>
+                <View style={styles.buttonSecondary}>
+                  <Text style={styles.buttonSecondaryText}>NO THANKS</Text>
+                </View>
+              </Pressable>
+              <Pressable style={styles.betButtonSlot} onPress={() => resolveBetOffer(true)}>
+                <View style={styles.buttonBet}>
+                  <Text style={styles.buttonBetText}>BET</Text>
+                </View>
+              </Pressable>
+            </View>
+          </View>
         ) : (
           <>
+            {isBetRound && (
+              <Text style={styles.betRoundBanner}>
+                💰 BET ROUND — WIN: +{BET_WIN_MULTIPLIER} PTS · LOSE: −{BET_LOSE_STRIKES} STRIKES
+              </Text>
+            )}
             <Text style={styles.label}>WHICH MOVIE CONNECTS TO THE TOP TILE?</Text>
 
             {round ? (
@@ -211,6 +284,7 @@ function GameScreen({ game }: { game: MovieLadder }) {
                         title={m.title}
                         year={m.year}
                         compact
+                        state={isBetRound ? 'bet' : 'default'}
                         onPress={() => pick(id)}
                       />
                     </View>
@@ -242,15 +316,17 @@ function ResultModal({
   strikes: number;
   onContinue: () => void;
 }) {
-  const { correct, pickedId, correctId, previousId, matches } = result;
+  const { correct, pickedId, correctId, previousId, matches, isBet } = result;
   const previousTitle = game.movie(previousId).title;
   const correctTitle = game.movie(correctId).title;
   const pickedTitle = game.movie(pickedId).title;
   const matchLines = formatMatches(matches);
+  const strikeCost = isBet ? BET_LOSE_STRIKES : 1;
   // Strikes state doesn't update until the player taps CONTINUE (see
   // confirmPick), so this pick's own tally has to be computed here rather
   // than read off the live count.
-  const displayStrikes = correct ? strikes : strikes + 1;
+  const displayStrikes = correct ? strikes : Math.min(MAX_STRIKES, strikes + strikeCost);
+  const points = correct ? (isBet ? BET_WIN_MULTIPLIER : 1) : 0;
 
   return (
     <Modal transparent animationType="fade">
@@ -261,7 +337,8 @@ function ResultModal({
               {correct ? 'Correct!' : 'Not quite.'}
             </Text>
             <Text style={[styles.modalScore, { color: correct ? colors.green : colors.textSecondary }]}>
-              {correct ? '+1 point' : '+0 points'}
+              +{points} point{points === 1 ? '' : 's'}
+              {isBet && correct ? ' — bet won!' : ''}
             </Text>
             {!correct && (
               <Text style={styles.modalLine}>
@@ -281,6 +358,7 @@ function ResultModal({
             {!correct && (
               <Text style={[styles.modalLine, styles.modalStrikes]}>
                 {displayStrikes}/{MAX_STRIKES} strikes used.
+                {isBet ? ' (bet lost — 2 strikes)' : ''}
               </Text>
             )}
           </ScrollView>
@@ -342,6 +420,14 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 6,
   },
+  betRoundBanner: {
+    color: colors.yellow,
+    fontWeight: '800',
+    fontSize: 12,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    marginTop: 16,
+  },
   result: {
     marginTop: 12,
     textAlign: 'center',
@@ -386,6 +472,21 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     textAlign: 'center',
   },
+  betLine: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  betButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+    width: '100%',
+  },
+  betButtonSlot: {
+    flex: 1,
+  },
   button: {
     backgroundColor: colors.pink,
     borderRadius: 8,
@@ -393,7 +494,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     alignItems: 'center',
   },
+  buttonBet: {
+    backgroundColor: colors.yellow,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  // Dark text on the gold button -- the shared white buttonText style
+  // reads poorly against yellow.
+  buttonBetText: { color: colors.background, fontWeight: '800', letterSpacing: 1 },
+  buttonSecondary: {
+    backgroundColor: colors.cellEmpty,
+    borderWidth: 1.5,
+    borderColor: colors.cellBorder,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
   buttonText: { color: '#fff', fontWeight: '800', letterSpacing: 1 },
+  buttonSecondaryText: { color: colors.textSecondary, fontWeight: '800', letterSpacing: 1 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(5, 8, 18, 0.85)',

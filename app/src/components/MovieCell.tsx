@@ -9,13 +9,16 @@ import { colors } from '../theme';
  * NxN board layout -- it reproduces the cell itself: dark fill, colored
  * border, optional glow, bold centered label.
  */
-export type CellState = 'default' | 'current' | 'correct' | 'wrong';
+export type CellState = 'default' | 'current' | 'correct' | 'wrong' | 'bet';
 
 const BORDER_COLOR: Record<CellState, string> = {
   default: colors.cellBorder,
   current: colors.green,
   correct: colors.blue,
   wrong: colors.red,
+  // Marks a bet round's candidates -- gold, distinct from every other
+  // state, so raised stakes are never a surprise at result time.
+  bet: colors.yellow,
 };
 
 export default function MovieCell({
