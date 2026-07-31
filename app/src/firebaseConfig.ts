@@ -15,10 +15,10 @@
  * config just fails the same way a real but wrong config would.
  */
 export const firebaseConfig = {
-  apiKey: 'REPLACE_ME',
-  authDomain: 'REPLACE_ME.firebaseapp.com',
-  projectId: 'REPLACE_ME',
-  storageBucket: 'REPLACE_ME.appspot.com',
-  messagingSenderId: 'REPLACE_ME',
-  appId: 'REPLACE_ME',
+  apiKey: 'AIzaSyCsnu6qnY16duO2bUn6tT6rw3rrGmG9NAA',
+  authDomain: 'movie-ladder.firebaseapp.com',
+  projectId: 'movie-ladder',
+  storageBucket: 'movie-ladder.firebasestorage.app',
+  messagingSenderId: '785914333251',
+  appId: '1:785914333251:web:746b48316ebf9bae02ecf6',
 };
