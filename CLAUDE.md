@@ -458,12 +458,36 @@ on-disk caches (`cache/`, `cache_films/`). Full music run takes a few hours.
   across every implemented type in the shipped data. `TUTORIAL_FLOW.md`'s
   table should be updated to match (not yet done — flagging here so it
   doesn't get missed).
+- [x] Scoring and strikes are now real session state in `App.tsx`
+  (previously only the tutorial's static explainer copy existed): +1 point
+  per correct pick, +5 for completing a 5-tile floor, +10 more on top of
+  that if the floor had zero strikes, 5 strikes ends the run. A persistent
+  status bar above the board shows `SCORE:` and `STRIKES: n/5` (red once
+  >0) at all times; the per-pick result modal shows that pick's own point
+  value plus a running strike tally on a miss; the floor-complete banner
+  shows that floor's own point total, with the no-strike bonus called out
+  separately when earned. Run-ending game over (5 strikes) shows final
+  score and a PLAY AGAIN that fully resets state -- added as the minimum
+  needed for the strike counter to be coherent (tracking a countdown with
+  no consequence at zero would look broken), not full scope: no
+  leaderboard, no "view connection chain," no betting. Verified every
+  branch deliberately (see below), including the edge case where the 5th
+  strike lands on the same pick that completes a floor -- the floor bonus
+  still applies to the score, but the milestone banner is skipped in favor
+  of going straight to game over, since there's no next round to pause
+  before anyway.
+  **Verification note:** correctness is genuinely random per round (no
+  visual tell), so hitting both outcomes on demand needed a temporary
+  `window.__round`/`window.__state` debug hook to read the live
+  `correctId` and confirm state transitions precisely, rather than
+  clicking blind and hoping. Removed before shipping.
+- [ ] Betting is still not implemented -- it wasn't asked for and needs its
+  own UI (bet offer prompt, staking a strike, double-strike-loss path).
+  The two numbers below remain unverified for exactly that reason.
 - [ ] Two numbers were set as reasonable defaults, not playtested — revisit
-  if they feel off once there's a real build: bet payout is 10x that
-  round's point value; bet timing/frequency is once per completed 5-tile
-  group. Not yet playtested since scoring/strikes/betting session state
-  isn't implemented in the app yet (only the tutorial's static explainer
-  copy exists) — still open.
+  if they feel off once betting exists to test them against: bet payout is
+  10x that round's point value (now a real, known number per pick); bet
+  timing/frequency is once per completed 5-tile floor.
 
 **Chart Ladder (music) — still open, not touched by the movie-ladder work:**
 - Tune tile selection weights using the generator's stats table —
