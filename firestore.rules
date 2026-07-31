@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// Movie Ladder's top-10 high-score leaderboard (see app/src/leaderboard.ts).
+// Public read (anyone can view the leaderboard without signing in), a
+// narrowly-shaped create (enforces the 3-letter-initials/bounded-score
+// format the client actually writes), and no update/delete from the client
+// at all -- scores are write-once. This does NOT verify a score was
+// actually earned by real gameplay; there's no backend for this client-only
+// game to check against. The score cap below is just a sanity ceiling
+// against obviously-fake values, not real anti-cheat.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /highscores/{scoreId} {
+      allow read: if true;
+
+      allow create: if request.resource.data.keys().hasOnly(['name', 'score', 'createdAt'])
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() > 0
+                    && request.resource.data.name.size() <= 3
+                    && request.resource.data.score is number
+                    && request.resource.data.score > 0
+                    && request.resource.data.score <= 1000000
+                    && request.resource.data.createdAt == request.time;
+
+      allow update, delete: if false;
+    }
+  }
+}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import connectionsData from './assets/data/connections.json';
 import { MovieLadder, Round } from './src/movieLadder';
@@ -9,6 +9,7 @@ import MovieCell from './src/components/MovieCell';
 import LadderStack, { MAX_BOARD_WIDTH, MAX_STACK_TILES } from './src/components/LadderStack';
 import { formatMatches } from './src/tutorial';
 import { colors } from './src/theme';
+import { fetchTopScores, LeaderboardEntry, submitScore, wouldQualify } from './src/leaderboard';
 
 const SLIDE_DURATION_MS = 450;
 
@@ -61,6 +62,13 @@ interface SavedGame {
   gameOver: boolean;
   round: Round | null;
   pendingResult: PendingResult | null;
+  // Whether this run's final score has already been submitted to the
+  // leaderboard -- persisted so a reload on the RUN OVER screen doesn't
+  // re-offer (and risk a duplicate submission for) a score already saved.
+  // Whether it currently QUALIFIES is re-checked live against the
+  // leaderboard instead (see GameScreen's scoreQualifies effect), not
+  // persisted here.
+  scoreSubmitted: boolean;
   // Every movie ID actually displayed by this snapshot (stack, round
   // candidates, pending-result movies), paired with its title at save time.
   // Movie IDs are just array positions (see connections_generator.py) --
@@ -179,6 +187,31 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   // instant that round resolves, win or lose.
   const [isBetRound, setIsBetRound] = useState(() => savedGame?.isBetRound ?? false);
 
+  // High-score leaderboard: modal visibility + its data (null = loading /
+  // not yet fetched), openable any time via the header button regardless
+  // of run state.
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[] | null>(null);
+  // Whether this run's final score currently makes the top 10 -- re-checked
+  // against the live leaderboard whenever the game-over screen mounts
+  // (including resuming straight into it after a reload), so it's derived
+  // state rather than something persisted in the save itself.
+  const [scoreQualifies, setScoreQualifies] = useState(false);
+  const [scoreSubmitted, setScoreSubmitted] = useState(() => savedGame?.scoreSubmitted ?? false);
+  const [initials, setInitials] = useState('');
+  const [submittingScore, setSubmittingScore] = useState(false);
+
+  useEffect(() => {
+    if (!gameOver || scoreSubmitted) return;
+    let cancelled = false;
+    wouldQualify(score).then((qualifies) => {
+      if (!cancelled) setScoreQualifies(qualifies);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [gameOver, scoreSubmitted, score]);
+
   // Auto-save: re-persist the whole run on every change so a reload/close
   // resumes exactly where the player left off (see the SavedGame type's
   // docs above for why movie IDs are re-verified on load, not just replayed
@@ -198,6 +231,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       gameOver,
       round,
       pendingResult,
+      scoreSubmitted,
     });
   }, [
     game,
@@ -214,7 +248,22 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     gameOver,
     round,
     pendingResult,
+    scoreSubmitted,
   ]);
+
+  function openLeaderboard() {
+    setShowLeaderboard(true);
+    setLeaderboardEntries(null);
+    fetchTopScores().then(setLeaderboardEntries);
+  }
+
+  async function handleSubmitScore() {
+    if (initials.length === 0 || submittingScore) return;
+    setSubmittingScore(true);
+    await submitScore(initials, score);
+    setSubmittingScore(false);
+    setScoreSubmitted(true);
+  }
 
   function pick(candidateId: number) {
     if (!round) return;
@@ -328,6 +377,10 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     setFloorsCompleted(0);
     setBetOffer(false);
     setIsBetRound(false);
+    setScoreQualifies(false);
+    setScoreSubmitted(false);
+    setInitials('');
+    setSubmittingScore(false);
     slideAnim.setValue(0);
   }
 
@@ -340,6 +393,9 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerText}>MOVIE LADDER</Text>
+        <Pressable onPress={openLeaderboard}>
+          <Text style={styles.leaderboardButtonText}>🏆 SCORES</Text>
+        </Pressable>
       </View>
 
       <View style={styles.statusBar}>
@@ -356,6 +412,28 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
           <View style={styles.milestoneBanner}>
             <Text style={[styles.milestoneText, { color: colors.red }]}>RUN OVER</Text>
             <Text style={styles.milestoneScore}>Final score: {score}</Text>
+            {scoreQualifies && !scoreSubmitted && (
+              <>
+                <Text style={styles.betLine}>🎉 New top-10 high score! Enter your initials:</Text>
+                <TextInput
+                  style={styles.initialsInput}
+                  value={initials}
+                  onChangeText={(t) => setInitials(t.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3))}
+                  maxLength={3}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  placeholder="ABC"
+                  placeholderTextColor={colors.textSecondary}
+                />
+                <Pressable
+                  style={[styles.button, (initials.length === 0 || submittingScore) && styles.buttonDisabled]}
+                  disabled={initials.length === 0 || submittingScore}
+                  onPress={handleSubmitScore}
+                >
+                  <Text style={styles.buttonText}>{submittingScore ? 'SAVING…' : 'SUBMIT ▶'}</Text>
+                </Pressable>
+              </>
+            )}
             <Pressable style={styles.button} onPress={restart}>
               <Text style={styles.buttonText}>PLAY AGAIN ▶</Text>
             </Pressable>
@@ -430,7 +508,49 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       {pendingResult && (
         <ResultModal game={game} result={pendingResult} strikes={strikes} onContinue={confirmPick} />
       )}
+
+      {showLeaderboard && (
+        <LeaderboardModal entries={leaderboardEntries} onClose={() => setShowLeaderboard(false)} />
+      )}
     </View>
+  );
+}
+
+function LeaderboardModal({
+  entries,
+  onClose,
+}: {
+  entries: LeaderboardEntry[] | null;
+  onClose: () => void;
+}) {
+  return (
+    <Modal transparent animationType="fade">
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>🏆 HIGH SCORES</Text>
+          {entries === null ? (
+            <Text style={styles.modalLine}>Loading…</Text>
+          ) : entries.length === 0 ? (
+            <Text style={styles.modalLine}>
+              No scores yet — be the first! (Or the leaderboard isn’t configured yet.)
+            </Text>
+          ) : (
+            <ScrollView style={styles.modalScroll}>
+              {entries.map((entry, i) => (
+                <View key={i} style={styles.leaderboardRow}>
+                  <Text style={styles.leaderboardRank}>{i + 1}.</Text>
+                  <Text style={styles.leaderboardName}>{entry.name}</Text>
+                  <Text style={styles.leaderboardScore}>{entry.score}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+          <Pressable style={styles.button} onPress={onClose}>
+            <Text style={styles.buttonText}>CLOSE</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -504,6 +624,9 @@ const styles = StyleSheet.create({
   app: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, paddingHorizontal: 16, paddingTop: 48 },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     backgroundColor: colors.headerBackground,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -515,7 +638,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 18,
     letterSpacing: 2,
-    textAlign: 'center',
+  },
+  leaderboardButtonText: {
+    color: colors.yellow,
+    fontWeight: '800',
+    fontSize: 12,
+    letterSpacing: 0.5,
   },
   // Pinned above the scrollable board, like chart-ladder's own
   // LEVEL/SCORE subheader, so it stays visible regardless of scroll
@@ -642,7 +770,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonText: { color: '#fff', fontWeight: '800', letterSpacing: 1 },
+  buttonDisabled: { opacity: 0.5 },
   buttonSecondaryText: { color: colors.textSecondary, fontWeight: '800', letterSpacing: 1 },
+  initialsInput: {
+    backgroundColor: colors.cellEmpty,
+    borderWidth: 1.5,
+    borderColor: colors.cellBorder,
+    borderRadius: 8,
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 4,
+    textAlign: 'center',
+    paddingVertical: 10,
+    width: 100,
+    marginBottom: 12,
+  },
+  leaderboardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.cellBorder,
+  },
+  leaderboardRank: {
+    width: 28,
+    color: colors.textSecondary,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  leaderboardName: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontWeight: '800',
+    fontSize: 15,
+    letterSpacing: 1,
+  },
+  leaderboardScore: {
+    color: colors.yellow,
+    fontWeight: '800',
+    fontSize: 15,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(5, 8, 18, 0.85)',
