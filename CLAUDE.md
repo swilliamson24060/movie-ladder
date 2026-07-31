@@ -627,6 +627,45 @@ on-disk caches (`cache/`, `cache_films/`). Full music run takes a few hours.
   resuming with the wrong movie under a stale ID. Verified in-browser,
   including deliberately corrupting a saved title and malformed JSON —
   both fall back to a fresh game with no crash.
+- [x] Persistent top-10 high-score leaderboard added, 2026-07-31 (design
+  decisions from a quick interview, matching this project's established
+  pattern for implementation-level questions an ask doesn't specify):
+  3-letter arcade-style initials, the name-entry prompt only appears on
+  RUN OVER when the score actually makes the top 10 (checked live against
+  the leaderboard, not just "always offer"), and the leaderboard itself
+  is viewable any time via a "🏆 SCORES" header button, not gated behind
+  a run ending. Backed by Firestore: `app/src/leaderboard.ts` wraps
+  `fetchTopScores()`/`wouldQualify()`/`submitScore()` around one
+  `highscores` collection (one doc per submission, ranked by an
+  `orderBy('score','desc').limit(10)` query rather than maintaining a
+  single top-10 array document under concurrent writes).
+  `app/src/firebaseConfig.ts` holds the Firebase Web SDK config as
+  placeholders — these values are meant to be public in client apps
+  (Firebase's own model; access control is Firestore Security Rules, not
+  hiding the config) — real project values are a follow-up once the
+  user supplies them. `/firestore.rules` at the repo root has the rules
+  to paste into that project's console: public read, a narrowly-shaped
+  create (3-letter name, bounded positive score, server-set timestamp),
+  no update/delete from the client. **Not real anti-cheat** — this is a
+  client-only game with no backend to verify a score was actually
+  earned; acceptable for a casual hobby leaderboard, revisit with Cloud
+  Functions verification if that ever becomes a real problem.
+  **Bug found and fixed while verifying:** every leaderboard call is
+  raced against a 6-second timeout (`withTimeout` in leaderboard.ts) —
+  discovered that a call against an unreachable/misconfigured Firebase
+  project (e.g. the placeholder config, before real values are filled
+  in) doesn't reject quickly, it can hang well past 30 seconds, which
+  would leave the qualify-check effect and the leaderboard modal's
+  loading state stuck indefinitely with no timeout guard. Verified
+  in-browser end to end against the placeholder config (which exercises
+  exactly this failure path): leaderboard modal's loading/empty states,
+  full submit flow (qualify → enter initials → SUBMIT → SAVING… →
+  scoreSubmitted persists across reload so a refresh doesn't re-offer/
+  duplicate-submit), all resolving within the timeout with no crash and
+  no console errors. Real Firestore connectivity still needs the
+  project's own config values and the rules above pasted in — flagged
+  to the user as a follow-up, not something Claude can complete alone
+  (no access to the user's Firebase console).
 
 **Chart Ladder (music) — still open, not touched by the movie-ladder work:**
 - Tune tile selection weights using the generator's stats table —
