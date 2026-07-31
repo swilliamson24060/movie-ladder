@@ -23,7 +23,10 @@ export type Phase =
   | 'pick-wrong'
   | 'explain-wrong'
   | 'milestone'
-  | 'betting'
+  | 'betting-intro'
+  | 'betting-offer'
+  | 'betting-round'
+  | 'betting-win'
   | 'strikes'
   | 'done';
 
@@ -34,12 +37,13 @@ export const PHASE_ORDER: Phase[] = [
   'pick-wrong',
   'explain-wrong',
   'milestone',
-  'betting',
+  'betting-intro',
+  'betting-offer',
+  'betting-round',
+  'betting-win',
   'strikes',
   'done',
 ];
-
-export const EXPLAIN_MODAL_MIN_MS = 5000;
 
 const CONNECTION_LABELS: Record<string, string> = {
   same_director: 'Same director',
@@ -77,8 +81,16 @@ export interface TutorialScript {
   guardiansOfTheGalaxy: number;
   backToTheFuture: number;
   homeAlone: number;
+  // Betting demo round: continues the Tarantino chain past Kill Bill Vol. 2
+  // (see TUTORIAL_FLOW.md's "rounds 4-5" note) with Titanic/The Sound of
+  // Music as decoys -- verified zero-connection against Kill Bill Vol. 2
+  // across every implemented type, same way the earlier decoy pairs were.
+  jackieBrown: number;
+  titanic: number;
+  soundOfMusic: number;
   correctRound1: Record<string, string[]>; // Pulp Fiction -> Kill Bill 1
   correctRound2: Record<string, string[]>; // Kill Bill 1 -> Kill Bill 2
+  betRound: Record<string, string[]>; // Kill Bill 2 -> Jackie Brown
 }
 
 export function buildTutorialScript(game: MovieLadder): TutorialScript {
@@ -89,6 +101,9 @@ export function buildTutorialScript(game: MovieLadder): TutorialScript {
   const guardiansOfTheGalaxy = findMovie(game, 'Guardians of the Galaxy', 2014);
   const backToTheFuture = findMovie(game, 'Back to the Future', 1985);
   const homeAlone = findMovie(game, 'Home Alone', 1990);
+  const jackieBrown = findMovie(game, 'Jackie Brown', 1997);
+  const titanic = findMovie(game, 'Titanic', 1997);
+  const soundOfMusic = findMovie(game, 'The Sound of Music', 1965);
 
   return {
     pulpFiction,
@@ -98,8 +113,12 @@ export function buildTutorialScript(game: MovieLadder): TutorialScript {
     guardiansOfTheGalaxy,
     backToTheFuture,
     homeAlone,
+    jackieBrown,
+    titanic,
+    soundOfMusic,
     correctRound1: game.connectionsBetween(pulpFiction, killBill1),
     correctRound2: game.connectionsBetween(killBill1, killBill2),
+    betRound: game.connectionsBetween(killBill2, jackieBrown),
   };
 }
 
@@ -133,9 +152,24 @@ export const COPY: Record<Phase, { title?: string; body: string; button: string 
       'Land 5 correct movies in a row without a strike and the stack clears off the board, leaving just the top tile to keep building from. Every group of 5 also pays a bonus:\n• +1 point per correct movie (as you just saw)\n• +5 points for completing a group of 5\n• +10 points more if that group of 5 had zero strikes\n\nA strike anywhere in the group still lets you finish it — you just miss out on that +10.',
     button: 'NEXT ▶',
   },
-  betting: {
+  'betting-intro': {
     body:
-      'Right after you clear a group of 5, you’ll sometimes get the option to bet — you can decline any time. A bet stakes one of your strikes on your very next pick:\n• Win → a big bonus payout on top of normal scoring\n• Lose → that miss costs you 2 strikes instead of 1\n\nYou get one bet offer per group of 5, so use it when you’re confident.',
+      'Right after you clear a group of 5, you’ll sometimes get the option to bet — you can decline any time. Let’s see it in action.',
+    button: 'NEXT ▶',
+  },
+  'betting-offer': {
+    body:
+      'A bet stakes one of your strikes on your very next pick:\n• Win → a big bonus payout on top of normal scoring\n• Lose → that miss costs you 2 strikes instead of 1\n\nLet’s take the bet.',
+    button: 'TAKE THE BET ▶',
+  },
+  'betting-round': {
+    body:
+      'Bet rounds are marked gold so the raised stakes are never a surprise. Here, Jackie Brown (highlighted) is the right pick.',
+    button: 'SEE WHAT HAPPENS ▶',
+  },
+  'betting-win': {
+    title: 'Correct!',
+    body: '', // filled in per-round from formatMatches()
     button: 'NEXT ▶',
   },
   strikes: {

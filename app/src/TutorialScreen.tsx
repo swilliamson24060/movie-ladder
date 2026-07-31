@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { MovieLadder } from './movieLadder';
@@ -8,7 +8,6 @@ import LadderStack, { MAX_BOARD_WIDTH } from './components/LadderStack';
 import {
   buildTutorialScript,
   COPY,
-  EXPLAIN_MODAL_MIN_MS,
   formatMatches,
   Phase,
   PHASE_ORDER,
@@ -56,7 +55,9 @@ export default function TutorialScreen({
         phase === 'pick-correct' ||
         phase === 'pick-wrong' ||
         phase === 'milestone' ||
-        phase === 'betting' ||
+        phase === 'betting-intro' ||
+        phase === 'betting-offer' ||
+        phase === 'betting-round' ||
         phase === 'strikes' ||
         phase === 'done') && (
         <StaticPhasePanel phase={phase} onAdvance={advance} />
@@ -90,6 +91,20 @@ export default function TutorialScreen({
           onAdvance={advance}
         />
       )}
+
+      {phase === 'betting-win' && (
+        <ExplainModal
+          title={COPY['betting-win'].title!}
+          lines={[
+            'Jackie Brown connects to Kill Bill: Volume 2 by:',
+            ...formatMatches(script.betRound).map((l) => `• ${l}`),
+            '',
+            '+10 points — bet won! Betting pays off big when you’re confident. Remember: losing a bet costs 2 strikes instead of 1.',
+          ]}
+          button={COPY['betting-win'].button}
+          onAdvance={advance}
+        />
+      )}
     </View>
   );
 }
@@ -112,9 +127,9 @@ function Board({
 
   // Every phase shows the same board the real game uses, so the tutorial
   // teaches the actual play surface rather than a stand-in diagram. Only
-  // the 3 hand-verified movies from TUTORIAL_FLOW.md are ever placed --
-  // the remaining slots of the 5-tile group stay as empty grid cells
-  // rather than inventing titles for movies 4 and 5.
+  // the 4 hand-verified movies from TUTORIAL_FLOW.md are ever placed --
+  // the remaining slot of the 5-tile group stays as empty grid cells rather
+  // than inventing a title for movie 5.
   if (phase === 'intro') {
     return <LadderStack movies={asStack([script.pulpFiction])} />;
   }
@@ -172,14 +187,87 @@ function Board({
       </>
     );
   }
-  if (phase === 'milestone' || phase === 'done') {
+  if (phase === 'milestone' || phase === 'betting-intro') {
     return (
       <LadderStack
         movies={asStack([script.pulpFiction, script.killBill1, script.killBill2])}
       />
     );
   }
+  if (phase === 'betting-offer') {
+    return (
+      <>
+        <LadderStack
+          movies={asStack([script.pulpFiction, script.killBill1, script.killBill2])}
+        />
+        <BetOfferPreview />
+      </>
+    );
+  }
+  if (phase === 'betting-round' || phase === 'betting-win') {
+    return (
+      <>
+        <LadderStack
+          movies={asStack([script.pulpFiction, script.killBill1, script.killBill2])}
+        />
+        <Text style={styles.betRoundBanner}>
+          💰 BET ROUND — WIN: +10 PTS · LOSE: −2 STRIKES
+        </Text>
+        <View style={styles.candidates}>
+          {[
+            { id: script.jackieBrown, highlight: true },
+            { id: script.titanic, highlight: false },
+            { id: script.soundOfMusic, highlight: false },
+          ].map(({ id, highlight }) => {
+            const movie = m(id);
+            return (
+              <View key={id} style={styles.candidateSlot}>
+                <MovieCell
+                  title={movie.title}
+                  year={movie.year}
+                  state={highlight ? 'correct' : 'bet'}
+                  compact
+                />
+              </View>
+            );
+          })}
+        </View>
+      </>
+    );
+  }
+  if (phase === 'done') {
+    return (
+      <LadderStack
+        movies={asStack([
+          script.pulpFiction,
+          script.killBill1,
+          script.killBill2,
+          script.jackieBrown,
+        ])}
+      />
+    );
+  }
   return null;
+}
+
+/** Non-interactive preview of the real bet-offer screen (see App.tsx) --
+ * the tutorial's own NEXT-style button below drives advancement, same
+ * pattern as every other scripted phase, so these buttons don't need to
+ * be pressable themselves. */
+function BetOfferPreview() {
+  return (
+    <View style={styles.betOfferPanel}>
+      <Text style={styles.betOfferTitle}>💰 WANT TO BET?</Text>
+      <View style={styles.betButtonRow}>
+        <View style={styles.buttonSecondaryPreview}>
+          <Text style={styles.buttonSecondaryText}>NO THANKS</Text>
+        </View>
+        <View style={styles.buttonBetPreview}>
+          <Text style={styles.buttonBetText}>BET</Text>
+        </View>
+      </View>
+    </View>
+  );
 }
 
 function StaticPhasePanel({ phase, onAdvance }: { phase: Phase; onAdvance: () => void }) {
@@ -205,14 +293,6 @@ function ExplainModal({
   button: string;
   onAdvance: () => void;
 }) {
-  const [canContinue, setCanContinue] = useState(false);
-
-  useEffect(() => {
-    setCanContinue(false);
-    const t = setTimeout(() => setCanContinue(true), EXPLAIN_MODAL_MIN_MS);
-    return () => clearTimeout(t);
-  }, [title, lines.join('|')]);
-
   return (
     <Modal transparent animationType="fade">
       <View style={styles.modalBackdrop}>
@@ -225,12 +305,8 @@ function ExplainModal({
               </Text>
             ))}
           </ScrollView>
-          <Pressable
-            disabled={!canContinue}
-            style={[styles.button, !canContinue && styles.buttonDisabled]}
-            onPress={onAdvance}
-          >
-            <Text style={styles.buttonText}>{canContinue ? button : '...'}</Text>
+          <Pressable style={styles.button} onPress={onAdvance}>
+            <Text style={styles.buttonText}>{button}</Text>
           </Pressable>
         </View>
       </View>
@@ -285,6 +361,55 @@ const styles = StyleSheet.create({
   // each candidate, spread across the row with space-between rather than
   // packed edge-to-edge.
   candidateSlot: { width: '25%' },
+  betRoundBanner: {
+    color: colors.yellow,
+    fontWeight: '800',
+    fontSize: 12,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    marginTop: 16,
+  },
+  betOfferPanel: {
+    marginTop: 16,
+    alignItems: 'center',
+    backgroundColor: colors.headerBackground,
+    borderRadius: 10,
+    padding: 16,
+    maxWidth: MAX_BOARD_WIDTH,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  betOfferTitle: {
+    color: colors.green,
+    fontWeight: '800',
+    fontSize: 16,
+    letterSpacing: 0.5,
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  betButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  buttonBetPreview: {
+    flex: 1,
+    backgroundColor: colors.yellow,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  buttonBetText: { color: colors.background, fontWeight: '800', letterSpacing: 1 },
+  buttonSecondaryPreview: {
+    flex: 1,
+    backgroundColor: colors.cellEmpty,
+    borderWidth: 1.5,
+    borderColor: colors.cellBorder,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  buttonSecondaryText: { color: colors.textSecondary, fontWeight: '800', letterSpacing: 1 },
   panel: { marginTop: 'auto', paddingBottom: 16 },
   body: { fontSize: 15, lineHeight: 21, marginBottom: 16, color: colors.textSecondary },
   button: {
@@ -293,7 +418,6 @@ const styles = StyleSheet.create({
     padding: 14,
     alignItems: 'center',
   },
-  buttonDisabled: { backgroundColor: colors.cellBorder },
   buttonText: { color: '#fff', fontWeight: '800', letterSpacing: 1 },
   modalBackdrop: {
     flex: 1,
