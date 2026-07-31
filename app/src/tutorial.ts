@@ -123,7 +123,7 @@ export function buildTutorialScript(game: MovieLadder): TutorialScript {
 export const COPY: Record<Phase, { title?: string; body: string; button: string }> = {
   intro: {
     body:
-      'Every ladder starts with one movie already on the board. Your job: keep picking movies that connect to the one on top, for as long as you can. Connections come straight from the data — shared director, cast member, award, and more. You don’t need to know which connection it is, just that one exists.',
+      'Every ladder starts with one movie already on the board. Your job: keep picking movies that connect to the one on top, for as long as you can.\n\nConnections come from:\n• Same director\n• Shared cast member\n• Same screenwriter\n• Same composer\n• Same award (Academy Awards, AFI, BAFTA, Cannes, Golden Globe, Golden Raspberry, Palme d’Or, Screen Actors Guild, Sundance, or Writers Guild of America)\n• Same franchise/series\n\nYou don’t need to know which one applies — just that one exists.\n\nMovies range from 1950 to 2026.',
     button: 'NEXT ▶',
   },
   'pick-correct': {

@@ -244,7 +244,7 @@ function GameScreen({ game }: { game: MovieLadder }) {
           </View>
         ) : milestone ? (
           <View style={styles.milestoneBanner}>
-            <Text style={styles.milestoneText}>🪜 ONE FLOOR COMPLETE!</Text>
+            <Text style={styles.milestoneText}>🪜 FLOOR {floorsCompleted} COMPLETE!</Text>
             <Text style={styles.milestoneScore}>
               +{floorScore} points
               {floorScore > FLOOR_BASE_BONUS ? ' — no strikes this floor!' : ''}

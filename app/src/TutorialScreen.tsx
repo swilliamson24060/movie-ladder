@@ -49,6 +49,14 @@ export default function TutorialScreen({
         <View style={styles.board}>
           <Board phase={phase} script={script} game={game} />
         </View>
+        {(phase === 'intro' ||
+          phase === 'pick-correct' ||
+          phase === 'pick-wrong' ||
+          phase === 'milestone' ||
+          phase === 'betting-intro' ||
+          phase === 'betting-offer' ||
+          phase === 'betting-round' ||
+          phase === 'done') && <Text style={styles.body}>{COPY[phase].body}</Text>}
       </ScrollView>
 
       {(phase === 'intro' ||
@@ -59,7 +67,9 @@ export default function TutorialScreen({
         phase === 'betting-offer' ||
         phase === 'betting-round' ||
         phase === 'done') && (
-        <StaticPhasePanel phase={phase} onAdvance={advance} />
+        <Pressable style={styles.button} onPress={advance}>
+          <Text style={styles.buttonText}>{COPY[phase].button}</Text>
+        </Pressable>
       )}
 
       {phase === 'explain-correct' && (
@@ -269,18 +279,6 @@ function BetOfferPreview() {
   );
 }
 
-function StaticPhasePanel({ phase, onAdvance }: { phase: Phase; onAdvance: () => void }) {
-  const copy = COPY[phase];
-  return (
-    <View style={styles.panel}>
-      <Text style={styles.body}>{copy.body}</Text>
-      <Pressable style={styles.button} onPress={onAdvance}>
-        <Text style={styles.buttonText}>{copy.button}</Text>
-      </Pressable>
-    </View>
-  );
-}
-
 function ExplainModal({
   title,
   lines,
@@ -411,13 +409,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonSecondaryText: { color: colors.textSecondary, fontWeight: '800', letterSpacing: 1 },
-  panel: { marginTop: 'auto', paddingBottom: 16 },
   body: { fontSize: 15, lineHeight: 21, marginBottom: 16, color: colors.textSecondary },
   button: {
     backgroundColor: colors.pink,
     borderRadius: 8,
     padding: 14,
     alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 16,
   },
   buttonText: { color: '#fff', fontWeight: '800', letterSpacing: 1 },
   modalBackdrop: {
