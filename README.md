@@ -103,6 +103,15 @@ film`, so two otherwise-unrelated substantial films frequently share at
 least one anyway, undermining the "a decoy has zero valid connections"
 premise the game depends on.
 
+**Non-US movies are filtered for US-player relevance** (decided
+2026-07-31): a non-US film only ships if it has a real connection (via
+one of the active gameplay types — director, cast, screenwriter,
+composer, a major award, or series, *not* `same_country` itself) to a US
+film, or won one of the 10 major awards above on its own merits. US films
+always ship. Drops 1,335 of 17,009 films (7.8%) — regionally notable but
+US-obscure titles with no award pedigree and no crossover connection.
+See `connections_generator.py`'s `US_RELEVANCE_CONNECTION_TYPES`.
+
 The cast graph is the movie equivalent of the music game's collaboration
 graph — richest and least repetitive, and it chains naturally (actor A was
 in a film with actor B, who was in a film with C). Essentially Six Degrees

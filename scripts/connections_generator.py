@@ -38,6 +38,15 @@ finding, not a null result, and worth the same scrutiny genre got before
 this ships. Flagging here and in the punch-list writeup rather than
 dropping it unilaterally.
 
+US-relevance filter (decided 2026-07-31): too many non-US films were
+obscure to US players. Non-US movies are dropped from the shipped movie
+pool entirely unless they have a real (active-connection-type) link to a
+US movie or won one of the major awards same_award is restricted to (see
+US_RELEVANCE_CONNECTION_TYPES below) -- US movies are always kept. This
+runs after every connection group is built but before compact integer IDs
+are assigned, so a dropped movie simply never gets an ID and disappears
+from every group it would have appeared in.
+
 Usage:
     python3 connections_generator.py --csv films.csv --out connections.json
 """
@@ -136,6 +145,29 @@ def is_major_award(name):
     return name.startswith(MAJOR_AWARD_PREFIXES)
 
 
+# US-relevance filter (decided 2026-07-31): too many non-US films were
+# obscure to US players. A non-US movie is dropped from the shipped game
+# entirely unless it has a real connection to a US movie or won a major
+# award on its own merits -- US movies are always kept.
+#
+# "Real connection" means via one of these types specifically, mirroring
+# round_selector.py's/movieLadder.ts's ACTIVE_CONNECTION_TYPES (duplicated
+# here rather than imported -- this script doesn't otherwise depend on
+# those modules and shouldn't start to just for this). same_country itself
+# deliberately does NOT count: it isn't an active gameplay connection type
+# (see the module docstring's same_country finding), so a shared-country
+# link couldn't actually surface as a decoy-beating connection in a real
+# round anyway -- it wouldn't be a genuine rescue from obscurity.
+US_RELEVANCE_CONNECTION_TYPES = {
+    "same_director",
+    "shared_cast_member",
+    "same_screenwriter",
+    "same_composer",
+    "same_award",
+    "same_series",
+}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", required=True)
@@ -180,6 +212,31 @@ def main():
         for w in title_words(m["title"]):
             word_groups[w].add(movie_id)
     groups["shared_title_word"] = {w: ids for w, ids in word_groups.items() if len(ids) >= 2}
+
+    # --- US-relevance filter ----------------------------------------------
+    # See US_RELEVANCE_CONNECTION_TYPES above for the rule. same_country's
+    # "United States" group (built normally above, same as any other
+    # country) is reused directly as the US-movie set rather than
+    # re-deriving it from the raw CSV a second time.
+    us_ids = set(groups.get("same_country", {}).get("United States", set()))
+    connects_to_us = set()
+    for conn_type in US_RELEVANCE_CONNECTION_TYPES:
+        for id_set in groups.get(conn_type, {}).values():
+            if id_set & us_ids:
+                connects_to_us |= id_set
+    # same_award's groups were already restricted to major-award values
+    # when built above, so membership in any of them -- regardless of that
+    # group's size -- means "won a major award," independent of whether the
+    # connection itself survives min-group-size later.
+    award_winner_ids = set()
+    for id_set in groups.get("same_award", {}).values():
+        award_winner_ids |= id_set
+
+    keep_ids = us_ids | connects_to_us | award_winner_ids
+    dropped_ids = set(movies.keys()) - keep_ids
+    for valmap in groups.values():
+        for value, id_set in valmap.items():
+            valmap[value] = id_set & keep_ids
 
     # --- assign compact integer IDs -------------------------------------
     # Position in this list IS the movie's ID everywhere else in the file.
@@ -249,6 +306,9 @@ def main():
     print(f"Wrote {args.out}  ({plain_size/1e6:.2f} MB)")
     if gz_size:
         print(f"Wrote {gz_path}  ({gz_size/1e6:.2f} MB gzipped, {plain_size/max(gz_size,1):.1f}x smaller) <- serve this one")
+    print(f"\nUS-relevance filter: dropped {len(dropped_ids)} non-US movies with no "
+          f"connection to a US movie and no major award "
+          f"({len(keep_ids)}/{len(movies)} kept, {len(keep_ids)/len(movies):.1%})")
     print(f"\n{len(movies_array)} movies referenced by at least one connection "
           f"(of {len(movies)} total unique movies in the CSV), {len(final)} connection types\n")
     print(f"{'connection_type':<24}{'groups':>8}{'movies covered':>16}{'avg size':>10}{'max size':>10}")

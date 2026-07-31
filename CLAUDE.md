@@ -332,6 +332,39 @@ connection go from 275 (1.6%, after the `same_release_year` removal above)
 to 317 (1.86%) of the 17,009-film dataset — same small-but-real tradeoff
 class as every other connection-type narrowing decision in this section.
 
+**Non-US movies filtered for US-player relevance (decided 2026-07-31).**
+Player feedback: too many non-US films were obscure to US players. A
+non-US movie is now dropped from the shipped movie pool entirely unless
+it has a real connection to a US movie or won a major award on its own
+merits — US movies are always kept. "Real connection" means via one of
+`US_RELEVANCE_CONNECTION_TYPES` in `connections_generator.py` (mirrors
+`ACTIVE_CONNECTION_TYPES`: director, cast, screenwriter, composer, the
+already-restricted `same_award`, series) — deliberately **not**
+`same_country` itself, since that type isn't active in gameplay (see the
+`same_country` finding above); a shared-country link can't actually
+surface as a decoy-beating connection in a real round, so it wouldn't be
+a genuine rescue from obscurity. "Major award" reuses the same
+`is_major_award()` restriction from the `same_award` entry above, checked
+independently of connection-group size (a movie counts as an award
+winner even if no other film in the dataset shares that exact award
+value). Runs after every connection group is built but before compact
+integer IDs are assigned, so a dropped movie simply never gets an ID.
+Verified against the real dataset: drops 1,335 of 17,009 movies (7.8%),
+keeping 15,674 (92.2%). Spot-checked both directions — dropped examples
+were genuinely obscure regional titles with no major-award recognition
+(a Yugoslav drama, a Russian crime film, an unawarded Chilean
+documentary); kept examples included non-US award winners with no US
+connection at all (*Decision to Leave* via a Cannes directing prize,
+*Departures* via Best International Feature) — the exception clause is
+doing real work, not a no-op. All of `TUTORIAL_FLOW.md`'s scripted movies
+(Pulp Fiction through Jackie Brown/Titanic/The Sound of Music) verified
+still present after filtering. Side effect: graph connectivity actually
+*improved* — movies with zero active connections dropped from 317/17,009
+(1.86%) to 62/15,674 (0.40%), since the filter disproportionately removes
+poorly-connected titles by construction. Regenerated
+`data/connections.json(.gz)` and copied to `app/assets/data/
+connections.json` per the usual regeneration workflow.
+
 **Tutorial:** full phase-by-phase script (with real, hand-verified example
 movies) is in `TUTORIAL_FLOW.md`. Implemented (see section 9's punch
 list) and since extended three times, 2026-07-31:
