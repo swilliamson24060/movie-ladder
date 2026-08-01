@@ -304,6 +304,31 @@ original betting implementation):
   miss) correctly paid no bonus, no doubling, and only the normal 1
   strike, with the gold marking turning off immediately after the miss.
 
+**High-score submission moved to a dedicated modal, decided 2026-08-01.**
+Previously the initials-entry form was inline inside the RUN OVER banner
+(`milestoneBanner`). Now it's a proper `<Modal transparent
+animationType="fade">` overlay (`ScoreSubmitModal` in `app/App.tsx`),
+matching the existing `ResultModal`/`LeaderboardModal` pattern instead of
+being a one-off inline form. Pure presentation move — no changes to
+`scoreQualifies`/`wouldQualify`, the save-game persistence, or
+`leaderboard.ts`'s Firestore calls. Since a blocking modal needs an
+explicit dismiss path that the old inline form didn't (it just sat there
+until the player scrolled past it), added a **SKIP** button
+(`handleSkipScoreSubmit`) alongside SUBMIT — skipping sets the same
+`scoreSubmitted` flag a real submission would, so the modal doesn't
+reappear later in the run; the leaderboard itself only ever reflects a
+real `submitScore()` call either way, so reusing the flag for both is
+safe. The shared `modalCard`/`modalTitle`/etc. styles are left-aligned by
+design (for `ResultModal`/`LeaderboardModal`'s prose); this modal's
+content is short status lines plus a centered input, so it opts into
+centering via new `scoreSubmitCard`/`centeredText` styles rather than
+changing the shared defaults. Verified in-browser: SKIP path, SUBMIT path
+(confirmed with a real Firestore write, checked against the leaderboard),
+and reload-mid-modal (confirming the save-game mechanic still round-trips
+correctly through the new modal architecture) all passed with no rework
+needed. Deployed and reconfirmed live with a clean console on
+`swilliamson24060.github.io/movie-ladder`.
+
 **Decoy-selection requirement (the actual engineering delta from chart-
 ladder).** `round_selector.py`'s current `ChartLadder.build_round()` picks
 3 *tile-type* labels and lets the engine silently choose the next song —
