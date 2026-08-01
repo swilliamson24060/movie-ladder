@@ -304,6 +304,31 @@ original betting implementation):
   miss) correctly paid no bonus, no doubling, and only the normal 1
   strike, with the gold marking turning off immediately after the miss.
 
+**Betting blocked at 4 strikes, bug fix 2026-08-01.** A bet floor's miss
+still costs its normal 1 strike (see the rework above -- there's no
+separate bet-loss penalty anymore), which meant accepting a bet at
+`MAX_STRIKES - 1` (4/5) strikes let a single miss simultaneously lose the
+bet *and* end the run, in the same tap -- a player with one strike of
+margin left had no way to see that coming from the bet-offer screen,
+since its copy only describes the bet's own win/lose outcome, not the
+run-ending strike underneath it. Fixed by gating the bet offer itself:
+`continueAfterMilestone` now checks `MAX_STRIKES - strikes >=
+MIN_STRIKES_LEFT_TO_BET` (2) before showing `betOffer`; when a floor
+would otherwise offer a bet but the player doesn't have 2 strikes of
+margin left, a new `betBlocked` screen renders instead ("CAN'T BET RIGHT
+NOW" + explanation + CONTINUE), then proceeds straight into the next
+floor with no bet, same as declining. New `betBlocked` state/`SavedGame`
+field follows the exact same persistence pattern as `betOffer` (reset in
+`restart()`, included in the autosave snapshot) so a reload mid-notice
+shows the same screen rather than silently skipping it. Verified
+in-browser via temporary debug hooks driving `continueAfterMilestone`
+directly at the boundary: 4 strikes (1 remaining) correctly blocks with
+the notice, CONTINUE from that notice correctly clears it and builds a
+normal (non-bet) round; 3 strikes (2 remaining) correctly still offers
+the bet normally. No changes to the win/lose resolution itself, the
+per-floor scoring formulas, or `isBetFloor`'s mid-floor forfeit-on-strike
+logic -- this only gates whether the offer appears at all.
+
 **High-score submission moved to a dedicated modal, decided 2026-08-01.**
 Previously the initials-entry form was inline inside the RUN OVER banner
 (`milestoneBanner`). Now it's a proper `<Modal transparent
