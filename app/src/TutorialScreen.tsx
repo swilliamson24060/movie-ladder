@@ -78,7 +78,7 @@ export default function TutorialScreen({
           lines={[
             ...formatMatches(script.correctRound1),
             '',
-            '+1 point. All matching connections are always shown, even when there’s more than one — you don’t have to guess which one "counts."',
+            '+5 points, this floor’s per-tile value. All matching connections are always shown, even when there’s more than one — you don’t have to guess which one "counts."',
           ]}
           button={COPY['explain-correct'].button}
           onAdvance={advance}
@@ -108,7 +108,7 @@ export default function TutorialScreen({
             'Jackie Brown connects to Kill Bill: Volume 2 by:',
             ...formatMatches(script.betRound).map((l) => `• ${l}`),
             '',
-            '+10 points — bet won! Betting pays off big when you’re confident. Remember: losing a bet costs 2 strikes instead of 1.',
+            '+5 points, same as any correct pick. A real bet pays off separately, at the end of the floor: finish the whole floor with zero strikes and its completion bonus doubles. Miss even once and the bet’s off, though strikes still cost their normal amount either way.',
           ]}
           button={COPY['betting-win'].button}
           onAdvance={advance}
@@ -220,7 +220,7 @@ function Board({
           movies={asStack([script.pulpFiction, script.killBill1, script.killBill2])}
         />
         <Text style={styles.betRoundBanner}>
-          💰 BET ROUND — WIN: +10 PTS · LOSE: −2 STRIKES
+          💰 BET FLOOR — ZERO STRIKES DOUBLES THIS FLOOR’S COMPLETION BONUS
         </Text>
         <View style={styles.candidates}>
           {[

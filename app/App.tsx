@@ -13,23 +13,33 @@ import { fetchTopScores, LeaderboardEntry, submitScore, wouldQualify } from './s
 
 const SLIDE_DURATION_MS = 450;
 
-// CLAUDE.md section 5b's scoring/strikes/betting spec, implemented here:
-// +1 point per correct tile; +5 for completing a 5-tile floor; +10 more on
-// top of that if the floor had zero strikes; 5 strikes ends the run.
+// CLAUDE.md section 5b's scoring/strikes spec, escalating per floor
+// (decided 2026-07-31, replacing the original flat-rate version): floor N
+// (1-indexed) pays 5*N points per correct tile and a 10*N-point completion
+// bonus, plus a flat +10 more on top of that bonus if the floor had zero
+// strikes; 5 strikes ends the run.
 // Betting: offered once per completed floor (from floor 2 onward -- see
-// the interview this was built from, not a CLAUDE.md-decided number) as a
-// stake on the very next pick. Win pays 10x that pick's normal point
-// value; lose costs 2 strikes instead of 1. No blocking even when a loss
-// would end the run -- CLAUDE.md is explicit that's intentional.
+// the interview this was built from, not a CLAUDE.md-decided number), now
+// staking the entire NEXT FLOOR rather than a single pick (decided
+// 2026-07-31): win by completing that floor with zero strikes, which
+// doubles its completion bonus (the flat no-strike +10 included). Missing
+// even once forfeits the bet immediately -- strikes cost their normal 1
+// either way, there's no separate bet-loss strike penalty anymore. No
+// blocking even when a strike would end the run -- CLAUDE.md is explicit
+// that's intentional for the base game, and nothing about the bet redesign
+// changes that.
 const MAX_STRIKES = 5;
-const FLOOR_BASE_BONUS = 5;
+const TILE_POINTS_PER_FLOOR = 5;
+const FLOOR_BONUS_PER_FLOOR = 10;
 const FLOOR_NO_STRIKE_BONUS = 10;
-const BET_WIN_MULTIPLIER = 10;
-const BET_LOSE_STRIKES = 2;
 // Skip the bet offer after the very first floor, so a new player gets one
 // clean floor before stakes show up (decided in the interview for this
 // feature, not part of CLAUDE.md's original spec).
 const FLOORS_BEFORE_BETTING = 1;
+
+function floorNumberFor(floorsCompleted: number): number {
+  return floorsCompleted + 1; // 1-indexed: the floor currently in progress
+}
 
 interface PendingResult {
   correct: boolean;
@@ -37,7 +47,15 @@ interface PendingResult {
   correctId: number;
   previousId: number;
   matches: Record<string, string[]>;
+  // Was this pick made during an active bet floor -- captured at pick()
+  // time so the result modal can warn that a miss forfeits the bet, even
+  // though the bet's actual win/lose resolution happens at floor
+  // completion, not per pick.
   isBet: boolean;
+  // This floor's per-tile point value (see floorNumberFor/TILE_POINTS_PER_FLOOR),
+  // captured at pick() time so confirmPick() and the result modal use the
+  // exact same number without recomputing it from floorsCompleted twice.
+  tileValue: number;
 }
 
 // Save-game mechanic: there's only ever one run in flight, so "saving" just
@@ -55,9 +73,18 @@ interface SavedGame {
   strikes: number;
   groupHadStrike: boolean;
   floorScore: number;
+  // Whether the most recently completed floor (the one floorScore/
+  // floorBetWon describe) had zero strikes / had its bet won -- both only
+  // meaningful while `milestone` is true, persisted so a reload mid-
+  // milestone-screen shows the exact same banner text.
+  floorHadNoStrikes: boolean;
+  floorBetWon: boolean;
   floorsCompleted: number;
   betOffer: boolean;
-  isBetRound: boolean;
+  // True for every round of the *entire next floor* once a bet is
+  // accepted, not just one pick -- reset the instant a strike breaks it or
+  // the floor resolves, win or lose.
+  isBetFloor: boolean;
   milestone: boolean;
   gameOver: boolean;
   round: Round | null;
@@ -176,6 +203,10 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   // Points the most recently completed floor earned, shown in the
   // milestone banner. Only meaningful while `milestone` is true.
   const [floorScore, setFloorScore] = useState(() => savedGame?.floorScore ?? 0);
+  const [floorHadNoStrikes, setFloorHadNoStrikes] = useState(
+    () => savedGame?.floorHadNoStrikes ?? false
+  );
+  const [floorBetWon, setFloorBetWon] = useState(() => savedGame?.floorBetWon ?? false);
   const [gameOver, setGameOver] = useState(() => savedGame?.gameOver ?? false);
   // How many floors have been completed this run -- gates the bet offer
   // (skips after floor 1) rather than tracking a separate boolean.
@@ -183,9 +214,10 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   // True while the bet-offer step (BET / NO THANKS) is showing, right
   // after a floor's slide-down finishes and before the next round builds.
   const [betOffer, setBetOffer] = useState(() => savedGame?.betOffer ?? false);
-  // True only for the single round the player staked a bet on -- reset the
-  // instant that round resolves, win or lose.
-  const [isBetRound, setIsBetRound] = useState(() => savedGame?.isBetRound ?? false);
+  // True for every round of the entire next floor once a bet is accepted
+  // (win condition: complete that floor with zero strikes) -- flips back
+  // to false the instant a strike breaks it, or once the floor resolves.
+  const [isBetFloor, setIsBetFloor] = useState(() => savedGame?.isBetFloor ?? false);
 
   // High-score leaderboard: modal visibility + its data (null = loading /
   // not yet fetched), openable any time via the header button regardless
@@ -224,9 +256,11 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       strikes,
       groupHadStrike,
       floorScore,
+      floorHadNoStrikes,
+      floorBetWon,
       floorsCompleted,
       betOffer,
-      isBetRound,
+      isBetFloor,
       milestone,
       gameOver,
       round,
@@ -241,9 +275,11 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     strikes,
     groupHadStrike,
     floorScore,
+    floorHadNoStrikes,
+    floorBetWon,
     floorsCompleted,
     betOffer,
-    isBetRound,
+    isBetFloor,
     milestone,
     gameOver,
     round,
@@ -273,22 +309,29 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       correctId: round.correctId,
       previousId: currentId,
       matches: round.matches,
-      isBet: isBetRound,
+      isBet: isBetFloor,
+      tileValue: TILE_POINTS_PER_FLOOR * floorNumberFor(floorsCompleted),
     });
   }
 
   function confirmPick() {
     if (!pendingResult) return;
-    const { correctId, correct, isBet } = pendingResult;
+    const { correctId, correct, isBet, tileValue } = pendingResult;
     setPendingResult(null);
-    setIsBetRound(false); // a bet only ever stakes the one pick right after it's accepted
 
-    const strikeCost = isBet ? BET_LOSE_STRIKES : 1;
-    const newStrikes = correct ? strikes : Math.min(MAX_STRIKES, strikes + strikeCost);
+    const newStrikes = correct ? strikes : Math.min(MAX_STRIKES, strikes + 1);
     const thisGroupHadStrike = groupHadStrike || !correct;
 
-    if (correct) setScore((s) => s + (isBet ? BET_WIN_MULTIPLIER : 1));
+    if (correct) setScore((s) => s + tileValue);
     if (!correct) setStrikes(newStrikes);
+
+    // A strike permanently forfeits this floor's bet -- winning requires
+    // finishing with zero strikes, so once one happens there's nothing
+    // left to preserve. Turning the bet off immediately (rather than
+    // waiting for the floor to finish) stops the gold "bet floor" marking
+    // on the rest of this floor's rounds, which would otherwise misleadingly
+    // suggest the bet is still winnable.
+    if (isBetFloor && !correct) setIsBetFloor(false);
 
     // The chain always advances, right or wrong (CLAUDE.md section 5b).
     const newStack = [...stack, correctId];
@@ -299,9 +342,20 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
 
     const floorComplete = newStack.length >= MAX_STACK_TILES;
     if (floorComplete) {
-      const bonus = thisGroupHadStrike ? FLOOR_BASE_BONUS : FLOOR_BASE_BONUS + FLOOR_NO_STRIKE_BONUS;
+      const floorNum = floorNumberFor(floorsCompleted);
+      const noStrikeBonus = thisGroupHadStrike ? 0 : FLOOR_NO_STRIKE_BONUS;
+      const completionBonus = FLOOR_BONUS_PER_FLOOR * floorNum + noStrikeBonus;
+      // isBetFloor here reflects the outcome of every earlier pick this
+      // floor (it would already be false if any of them missed -- see
+      // above), so "still true AND this pick was correct too" is exactly
+      // "zero strikes across the whole floor," the bet's win condition.
+      const betWon = isBetFloor && correct && !thisGroupHadStrike;
+      const bonus = betWon ? completionBonus * 2 : completionBonus;
       setScore((s) => s + bonus);
       setFloorScore(bonus);
+      setFloorHadNoStrikes(!thisGroupHadStrike);
+      setFloorBetWon(betWon);
+      setIsBetFloor(false);
       setGroupHadStrike(false);
       setFloorsCompleted((n) => n + 1);
     } else {
@@ -357,7 +411,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
 
   function resolveBetOffer(accepted: boolean) {
     setBetOffer(false);
-    setIsBetRound(accepted);
+    setIsBetFloor(accepted);
     setRound(game.buildRound(stack[stack.length - 1], history));
   }
 
@@ -373,10 +427,12 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     setStrikes(0);
     setGroupHadStrike(false);
     setFloorScore(0);
+    setFloorHadNoStrikes(false);
+    setFloorBetWon(false);
     setGameOver(false);
     setFloorsCompleted(0);
     setBetOffer(false);
-    setIsBetRound(false);
+    setIsBetFloor(false);
     setScoreQualifies(false);
     setScoreSubmitted(false);
     setInitials('');
@@ -443,7 +499,11 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
             <Text style={styles.milestoneText}>🪜 FLOOR {floorsCompleted} COMPLETE!</Text>
             <Text style={styles.milestoneScore}>
               +{floorScore} points
-              {floorScore > FLOOR_BASE_BONUS ? ' — no strikes this floor!' : ''}
+              {floorBetWon
+                ? ' — bet won, completion bonus doubled!'
+                : floorHadNoStrikes
+                  ? ' — no strikes this floor!'
+                  : ''}
             </Text>
             <Pressable style={styles.button} onPress={continueAfterMilestone}>
               <Text style={styles.buttonText}>CONTINUE ▶</Text>
@@ -452,13 +512,10 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
         ) : betOffer ? (
           <View style={styles.milestoneBanner}>
             <Text style={styles.milestoneText}>💰 WANT TO BET?</Text>
-            <Text style={styles.betLine}>Stake a strike on your very next pick:</Text>
-            <Text style={styles.betLine}>
-              Win → +{BET_WIN_MULTIPLIER} points instead of +1
-            </Text>
-            <Text style={styles.betLine}>
-              Lose → costs {BET_LOSE_STRIKES} strikes instead of 1
-            </Text>
+            <Text style={styles.betLine}>Stake the next floor: finish it with zero strikes and</Text>
+            <Text style={styles.betLine}>that floor's completion bonus is doubled.</Text>
+            <Text style={styles.betLine}>Miss even once and the bet's off — strikes cost their</Text>
+            <Text style={styles.betLine}>normal amount either way.</Text>
             <View style={styles.betButtonRow}>
               <Pressable style={styles.betButtonSlot} onPress={() => resolveBetOffer(false)}>
                 <View style={styles.buttonSecondary}>
@@ -474,9 +531,9 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
           </View>
         ) : (
           <>
-            {isBetRound && (
+            {isBetFloor && (
               <Text style={styles.betRoundBanner}>
-                💰 BET ROUND — WIN: +{BET_WIN_MULTIPLIER} PTS · LOSE: −{BET_LOSE_STRIKES} STRIKES
+                💰 BET FLOOR — ZERO STRIKES DOUBLES THIS FLOOR’S COMPLETION BONUS
               </Text>
             )}
             <Text style={styles.label}>WHICH MOVIE CONNECTS TO THE TOP TILE?</Text>
@@ -491,7 +548,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
                         title={m.title}
                         year={m.year}
                         compact
-                        state={isBetRound ? 'bet' : 'default'}
+                        state={isBetFloor ? 'bet' : 'default'}
                         onPress={() => pick(id)}
                       />
                     </View>
@@ -565,17 +622,18 @@ function ResultModal({
   strikes: number;
   onContinue: () => void;
 }) {
-  const { correct, pickedId, correctId, previousId, matches, isBet } = result;
+  const { correct, pickedId, correctId, previousId, matches, isBet, tileValue } = result;
   const previousTitle = game.movie(previousId).title;
   const correctTitle = game.movie(correctId).title;
   const pickedTitle = game.movie(pickedId).title;
   const matchLines = formatMatches(matches);
-  const strikeCost = isBet ? BET_LOSE_STRIKES : 1;
   // Strikes state doesn't update until the player taps CONTINUE (see
   // confirmPick), so this pick's own tally has to be computed here rather
-  // than read off the live count.
-  const displayStrikes = correct ? strikes : Math.min(MAX_STRIKES, strikes + strikeCost);
-  const points = correct ? (isBet ? BET_WIN_MULTIPLIER : 1) : 0;
+  // than read off the live count. Bet floors no longer change the strike
+  // cost -- a miss always costs 1, whether or not a bet is riding on the
+  // floor (see the constants comment at the top of this file).
+  const displayStrikes = correct ? strikes : Math.min(MAX_STRIKES, strikes + 1);
+  const points = correct ? tileValue : 0;
 
   return (
     <Modal transparent animationType="fade">
@@ -587,7 +645,6 @@ function ResultModal({
             </Text>
             <Text style={[styles.modalScore, { color: correct ? colors.green : colors.textSecondary }]}>
               +{points} point{points === 1 ? '' : 's'}
-              {isBet && correct ? ' — bet won!' : ''}
             </Text>
             {!correct && (
               <Text style={styles.modalLine}>
@@ -607,7 +664,7 @@ function ResultModal({
             {!correct && (
               <Text style={[styles.modalLine, styles.modalStrikes]}>
                 {displayStrikes}/{MAX_STRIKES} strikes used.
-                {isBet ? ' (bet lost — 2 strikes)' : ''}
+                {isBet ? ' This also forfeits this floor’s bet.' : ''}
               </Text>
             )}
           </ScrollView>

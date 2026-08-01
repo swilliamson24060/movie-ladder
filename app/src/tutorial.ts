@@ -147,22 +147,22 @@ export const COPY: Record<Phase, { title?: string; body: string; button: string 
   },
   milestone: {
     body:
-      'Land 5 correct movies in a row without a strike and the stack clears off the board, leaving just the top tile to keep building from. Every group of 5 also pays a bonus:\n• +1 point per correct movie (as you just saw)\n• +5 points for completing a group of 5\n• +10 points more if that group of 5 had zero strikes\n\nA strike anywhere in the group still lets you finish it — you just miss out on that +10.',
+      'Land 5 correct movies in a row without a strike and the stack clears off the board, leaving just the top tile to keep building from. Scoring climbs every floor:\n• Floor 1 pays 5 points per correct movie, Floor 2 pays 10, Floor 3 pays 15 — 5 more per tile each floor (as you just saw)\n• Completing a floor pays a bonus too: 10 points for Floor 1, 20 for Floor 2, 30 for Floor 3 — 10 more each floor\n• Zero strikes on a floor adds +10 more on top of that floor’s bonus\n\nA strike anywhere in the floor still lets you finish it — you just miss out on that +10.',
     button: 'NEXT ▶',
   },
   'betting-intro': {
     body:
-      'Right after you clear a group of 5, you’ll sometimes get the option to bet — you can decline any time. Let’s see it in action.',
+      'Right after you clear a floor, you’ll sometimes get the option to bet — you can decline any time. Let’s see it in action.',
     button: 'NEXT ▶',
   },
   'betting-offer': {
     body:
-      'A bet stakes one of your strikes on your very next pick:\n• Win → a big bonus payout on top of normal scoring\n• Lose → that miss costs you 2 strikes instead of 1\n\nLet’s take the bet.',
+      'A bet stakes your entire next floor:\n• Win → finish that floor with zero strikes and its completion bonus doubles\n• Lose → miss even once and the bet’s off — strikes still cost their normal amount either way\n\nLet’s take the bet.',
     button: 'TAKE THE BET ▶',
   },
   'betting-round': {
     body:
-      'Bet rounds are marked gold so the raised stakes are never a surprise. Here, Jackie Brown (highlighted) is the right pick.',
+      'Every pick in a bet floor is marked gold, so the raised stakes are never a surprise. Here, Jackie Brown (highlighted) is the right pick.',
     button: 'SEE WHAT HAPPENS ▶',
   },
   'betting-win': {
