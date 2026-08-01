@@ -36,6 +36,10 @@ const FLOOR_NO_STRIKE_BONUS = 10;
 // clean floor before stakes show up (decided in the interview for this
 // feature, not part of CLAUDE.md's original spec).
 const FLOORS_BEFORE_BETTING = 1;
+// A bet floor still costs a strike its normal amount on a miss (see above),
+// so accepting one at MAX_STRIKES - 1 strikes means a single miss both loses
+// the bet and ends the run in the same tap -- blocked as a bug fix, 2026-08-01.
+const MIN_STRIKES_LEFT_TO_BET = 2;
 
 function floorNumberFor(floorsCompleted: number): number {
   return floorsCompleted + 1; // 1-indexed: the floor currently in progress
@@ -81,6 +85,10 @@ interface SavedGame {
   floorBetWon: boolean;
   floorsCompleted: number;
   betOffer: boolean;
+  // True while the "can't bet, not enough strikes left" notice is showing,
+  // right after a floor's slide-down finishes -- mutually exclusive with
+  // betOffer (the offer never renders when this is what triggered instead).
+  betBlocked: boolean;
   // True for every round of the *entire next floor* once a bet is
   // accepted, not just one pick -- reset the instant a strike breaks it or
   // the floor resolves, win or lose.
@@ -214,6 +222,9 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   // True while the bet-offer step (BET / NO THANKS) is showing, right
   // after a floor's slide-down finishes and before the next round builds.
   const [betOffer, setBetOffer] = useState(() => savedGame?.betOffer ?? false);
+  // True while the "can't bet" notice is showing in place of the bet offer,
+  // for a floor reached with too few strikes remaining to risk one.
+  const [betBlocked, setBetBlocked] = useState(() => savedGame?.betBlocked ?? false);
   // True for every round of the entire next floor once a bet is accepted
   // (win condition: complete that floor with zero strikes) -- flips back
   // to false the instant a strike breaks it, or once the floor resolves.
@@ -260,6 +271,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       floorBetWon,
       floorsCompleted,
       betOffer,
+      betBlocked,
       isBetFloor,
       milestone,
       gameOver,
@@ -279,6 +291,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     floorBetWon,
     floorsCompleted,
     betOffer,
+    betBlocked,
     isBetFloor,
     milestone,
     gameOver,
@@ -399,6 +412,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     // effect reliably on web (useNativeDriver falls back to a JS/rAF-driven
     // animation there). Capturing a plain boolean here sidesteps it.
     const offerBet = floorsCompleted > FLOORS_BEFORE_BETTING;
+    const canBet = MAX_STRIKES - strikes >= MIN_STRIKES_LEFT_TO_BET;
     Animated.timing(slideAnim, {
       toValue: 1,
       duration: SLIDE_DURATION_MS,
@@ -409,8 +423,10 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       setMilestone(false);
       slideAnim.setValue(0);
 
-      if (offerBet) {
+      if (offerBet && canBet) {
         setBetOffer(true);
+      } else if (offerBet) {
+        setBetBlocked(true);
       } else {
         setRound(game.buildRound(topId, history));
       }
@@ -420,6 +436,11 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   function resolveBetOffer(accepted: boolean) {
     setBetOffer(false);
     setIsBetFloor(accepted);
+    setRound(game.buildRound(stack[stack.length - 1], history));
+  }
+
+  function continueAfterBetBlocked() {
+    setBetBlocked(false);
     setRound(game.buildRound(stack[stack.length - 1], history));
   }
 
@@ -440,6 +461,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     setGameOver(false);
     setFloorsCompleted(0);
     setBetOffer(false);
+    setBetBlocked(false);
     setIsBetFloor(false);
     setScoreQualifies(false);
     setScoreSubmitted(false);
@@ -514,6 +536,16 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
                 </View>
               </Pressable>
             </View>
+          </View>
+        ) : betBlocked ? (
+          <View style={styles.milestoneBanner}>
+            <Text style={styles.milestoneText}>🚫 CAN’T BET RIGHT NOW</Text>
+            <Text style={styles.betLine}>You don’t have enough strikes left to risk a bet --</Text>
+            <Text style={styles.betLine}>a miss during a bet floor still costs a strike, and</Text>
+            <Text style={styles.betLine}>you're too close to {MAX_STRIKES}/{MAX_STRIKES} for that.</Text>
+            <Pressable style={styles.button} onPress={continueAfterBetBlocked}>
+              <Text style={styles.buttonText}>CONTINUE ▶</Text>
+            </Pressable>
           </View>
         ) : (
           <>
