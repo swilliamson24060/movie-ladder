@@ -301,6 +301,14 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     setScoreSubmitted(true);
   }
 
+  // "Declining" reuses scoreSubmitted rather than a separate flag -- for
+  // this modal's purposes "submitted" and "skipped" mean the same thing
+  // (don't show the prompt again this run), and the leaderboard itself
+  // only ever reflects a real submitScore() call either way.
+  function handleSkipScoreSubmit() {
+    setScoreSubmitted(true);
+  }
+
   function pick(candidateId: number) {
     if (!round) return;
     setPendingResult({
@@ -468,28 +476,6 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
           <View style={styles.milestoneBanner}>
             <Text style={[styles.milestoneText, { color: colors.red }]}>RUN OVER</Text>
             <Text style={styles.milestoneScore}>Final score: {score}</Text>
-            {scoreQualifies && !scoreSubmitted && (
-              <>
-                <Text style={styles.betLine}>🎉 New top-10 high score! Enter your initials:</Text>
-                <TextInput
-                  style={styles.initialsInput}
-                  value={initials}
-                  onChangeText={(t) => setInitials(t.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3))}
-                  maxLength={3}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  placeholder="ABC"
-                  placeholderTextColor={colors.textSecondary}
-                />
-                <Pressable
-                  style={[styles.button, (initials.length === 0 || submittingScore) && styles.buttonDisabled]}
-                  disabled={initials.length === 0 || submittingScore}
-                  onPress={handleSubmitScore}
-                >
-                  <Text style={styles.buttonText}>{submittingScore ? 'SAVING…' : 'SUBMIT ▶'}</Text>
-                </Pressable>
-              </>
-            )}
             <Pressable style={styles.button} onPress={restart}>
               <Text style={styles.buttonText}>PLAY AGAIN ▶</Text>
             </Pressable>
@@ -569,6 +555,17 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       {showLeaderboard && (
         <LeaderboardModal entries={leaderboardEntries} onClose={() => setShowLeaderboard(false)} />
       )}
+
+      {gameOver && scoreQualifies && !scoreSubmitted && (
+        <ScoreSubmitModal
+          score={score}
+          initials={initials}
+          onChangeInitials={setInitials}
+          submitting={submittingScore}
+          onSubmit={handleSubmitScore}
+          onSkip={handleSkipScoreSubmit}
+        />
+      )}
     </View>
   );
 }
@@ -605,6 +602,61 @@ function LeaderboardModal({
           <Pressable style={styles.button} onPress={onClose}>
             <Text style={styles.buttonText}>CLOSE</Text>
           </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ScoreSubmitModal({
+  score,
+  initials,
+  onChangeInitials,
+  submitting,
+  onSubmit,
+  onSkip,
+}: {
+  score: number;
+  initials: string;
+  onChangeInitials: (value: string) => void;
+  submitting: boolean;
+  onSubmit: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <Modal transparent animationType="fade">
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.modalCard, styles.scoreSubmitCard]}>
+          <Text style={[styles.modalTitle, styles.centeredText]}>🎉 New top-10 high score!</Text>
+          <Text style={[styles.modalScore, styles.centeredText]}>Final score: {score}</Text>
+          <Text style={[styles.modalLine, styles.centeredText]}>Enter your initials:</Text>
+          <TextInput
+            style={styles.initialsInput}
+            value={initials}
+            onChangeText={(t) => onChangeInitials(t.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3))}
+            maxLength={3}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            placeholder="ABC"
+            placeholderTextColor={colors.textSecondary}
+            autoFocus
+          />
+          <View style={styles.betButtonRow}>
+            <Pressable style={styles.betButtonSlot} onPress={onSkip}>
+              <View style={styles.buttonSecondary}>
+                <Text style={styles.buttonSecondaryText}>SKIP</Text>
+              </View>
+            </Pressable>
+            <Pressable
+              style={styles.betButtonSlot}
+              disabled={initials.length === 0 || submitting}
+              onPress={onSubmit}
+            >
+              <View style={[styles.button, (initials.length === 0 || submitting) && styles.buttonDisabled]}>
+                <Text style={styles.buttonText}>{submitting ? 'SAVING…' : 'SUBMIT ▶'}</Text>
+              </View>
+            </Pressable>
+          </View>
         </View>
       </View>
     </Modal>
@@ -890,4 +942,10 @@ const styles = StyleSheet.create({
   modalScore: { fontSize: 14, fontWeight: '800', marginBottom: 10 },
   modalLine: { fontSize: 14, lineHeight: 20, marginBottom: 4, color: colors.textPrimary },
   modalStrikes: { marginTop: 8, fontWeight: '700', color: colors.red },
+  // ResultModal/LeaderboardModal's text is deliberately left-aligned (it's
+  // reading prose), but the score-submit modal's content is short status
+  // lines + a centered input, so it opts into centering instead of that
+  // shared default.
+  scoreSubmitCard: { alignItems: 'center' },
+  centeredText: { textAlign: 'center' },
 });
