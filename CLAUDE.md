@@ -3,7 +3,7 @@
 Working notes for two related connection-chain games. Written to be read cold
 by a person or by Claude picking this up in a new session.
 
-Last updated: 2026-07-31
+Last updated: 2026-08-01
 
 ---
 
@@ -258,6 +258,51 @@ plain local (`offerBet`) that the callback just reads — sidesteps the
 unreliable-setState-in-callback issue rather than root-causing it
 further. Worth remembering if another delayed `Animated` callback in this
 app ever needs to make a state-dependent decision.
+
+**Scoring and betting reworked, decided 2026-08-01.** Supersedes the flat
++1/+5/+10 scoring and the single-pick 10x/2-strike betting above — both of
+those numbers and the betting mechanism they described are gone from the
+shipped app; this entry is the current authoritative spec. Decided via a
+quick `AskUserQuestion` interview before building (same pattern as the
+original betting implementation):
+- **Per-tile points now escalate by floor:** floor N (1-indexed) pays
+  `5*N` points per correct tile — Floor 1 = 5, Floor 2 = 10, Floor 3 = 15,
+  etc. (`TILE_POINTS_PER_FLOOR = 5` in `app/App.tsx`.)
+- **Floor completion bonus now escalates too:** `10*N` — Floor 1 = 10,
+  Floor 2 = 20, Floor 3 = 30, etc. (`FLOOR_BONUS_PER_FLOOR = 10`.) The
+  existing flat **+10 more if the floor had zero strikes** is unchanged,
+  still a flat add-on on top of the escalating base (`FLOOR_NO_STRIKE_BONUS`,
+  still 10).
+- **Betting now stakes an entire floor, not one pick.** Win requires
+  finishing that floor with **zero strikes** (the stricter of the two
+  options offered in the interview — the looser option was "just complete
+  the floor, strikes allowed"). Payout is that floor's completion bonus
+  **doubled** — not the old 10x-single-pick multiplier. A strike
+  immediately and permanently forfeits the bet for the rest of that floor
+  (`isBetFloor` flips off the instant a miss happens, not just at floor
+  end) so the gold "bet floor" marking never keeps advertising a bet that
+  can no longer be won. **No separate strike penalty for losing anymore**
+  — strikes always cost their normal 1, bet or no bet; the old "2 strikes
+  instead of 1" is gone entirely, a deliberate simplification since the
+  bet's downside is now just "no doubled bonus," not an added strike cost.
+- Renamed `isBetRound` → `isBetFloor` throughout (state, `SavedGame`,
+  `PendingResult`) to match the new scope. Added `floorHadNoStrikes`/
+  `floorBetWon` state, persisted in `SavedGame`, so the milestone banner's
+  message ("no strikes this floor!" / "bet won, completion bonus
+  doubled!") survives a reload mid-milestone-screen.
+- Updated the tutorial's copy throughout (milestone phase, betting-offer,
+  betting-round banner, betting-win explanation, the explain-correct
+  demo's point value) to teach the new numbers accurately. The
+  betting-win demo modal no longer claims its one scripted pick "won" a
+  bet, since winning now requires completing a whole floor — the tutorial
+  only demos a single pick, so the copy explains the mechanic
+  conceptually instead of claiming the demo fulfilled it.
+- Verified in-browser via a temporary debug hook driving real picks
+  across floors 1–4: every tile value (5/10/15/20) and completion bonus
+  (10/20/30/40, +10 no-strike) matched the formulas exactly; a won bet
+  correctly doubled Floor 3's bonus (40 → 80); a lost bet (deliberate
+  miss) correctly paid no bonus, no doubling, and only the normal 1
+  strike, with the gold marking turning off immediately after the miss.
 
 **Decoy-selection requirement (the actual engineering delta from chart-
 ladder).** `round_selector.py`'s current `ChartLadder.build_round()` picks
@@ -535,7 +580,7 @@ on-disk caches (`cache/`, `cache_films/`). Full music run takes a few hours.
 
 ## 9. Open items / next steps
 
-**Movie Ladder — updated 2026-07-31, this is the current punch list:**
+**Movie Ladder — updated 2026-08-01, this is the current punch list:**
 - [x] Run full `films_enrich.py` 1950–2026 — done, 17,009 films, verified,
   two data bugs found and fixed (see section 6).
 - [x] Game design (strikes, scoring, betting, tutorial flow, run
@@ -699,6 +744,15 @@ on-disk caches (`cache/`, `cache_films/`). Full music run takes a few hours.
   project's own config values and the rules above pasted in — flagged
   to the user as a follow-up, not something Claude can complete alone
   (no access to the user's Firebase console).
+- [x] Scoring reworked to escalate per floor, betting redesigned around
+  whole floors, 2026-08-01 — see section 5b's "Scoring and betting
+  reworked" entry for the full spec, interview-derived decisions, and
+  in-browser verification. Short version: per-tile points and the floor
+  completion bonus both now scale with floor number (5/tile and 10/floor
+  respectively, times the floor number) instead of flat amounts; betting
+  now stakes an entire floor (win = finish with zero strikes, doubles
+  that floor's completion bonus) instead of a single pick, with no
+  separate strike penalty for losing anymore.
 
 **Chart Ladder (music) — still open, not touched by the movie-ladder work:**
 - Tune tile selection weights using the generator's stats table —
