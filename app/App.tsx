@@ -539,7 +539,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
           </View>
         ) : betBlocked ? (
           <View style={styles.milestoneBanner}>
-            <Text style={styles.milestoneText}>🚫 CAN’T BET RIGHT NOW</Text>
+            <Text style={styles.milestoneText}>🚫 TOO MANY STRIKES. CANNOT PLACE BET</Text>
             <Text style={styles.betLine}>You don’t have enough strikes left to risk a bet --</Text>
             <Text style={styles.betLine}>a miss during a bet floor still costs a strike, and</Text>
             <Text style={styles.betLine}>you're too close to {MAX_STRIKES}/{MAX_STRIKES} for that.</Text>
