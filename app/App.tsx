@@ -253,6 +253,11 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   // closing copy ("Tap 🔗 VIEW CONNECTION CHAIN any time during a real
   // run"), which shipped before this button did.
   const [showChain, setShowChain] = useState(false);
+  // True from the moment the player taps QUIT until they dismiss the
+  // "Thanks for playing!" modal -- lets that modal own the score-submit UI
+  // itself (see the render condition below) instead of also popping the
+  // automatic ScoreSubmitModal on top of it once scoreQualifies resolves.
+  const [showQuitModal, setShowQuitModal] = useState(false);
   // Whether this run's final score currently makes the top 10 -- re-checked
   // against the live leaderboard whenever the game-over screen mounts
   // (including resuming straight into it after a reload), so it's derived
@@ -324,6 +329,32 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     setShowLeaderboard(true);
     setLeaderboardEntries(null);
     fetchTopScores().then(setLeaderboardEntries);
+  }
+
+  // Ends the run early, same underlying "run over" state a strikeout
+  // triggers (gameOver -- reuses the same wouldQualify effect, the same
+  // RUN OVER banner underneath, the same PLAY AGAIN restart), but through
+  // QuitModal's friendlier framing instead of the automatic ScoreSubmitModal.
+  // Clears every mid-round overlay so QuitModal is the only thing on top,
+  // even if the player quits mid-pick or mid-milestone.
+  function quit() {
+    setPendingResult(null);
+    setMilestone(false);
+    setBetOffer(false);
+    setBetBlocked(false);
+    setIsBetFloor(false);
+    setRound(null);
+    setGameOver(true);
+    setShowQuitModal(true);
+  }
+
+  // QuitModal's own "done" action -- closes it and hands off straight to
+  // the high-scores screen, per the ask ("once the dialog is closed, the
+  // player is taken to a high scores screen"). Works whether or not the
+  // player submitted/skipped a qualifying score first.
+  function finishQuit() {
+    setShowQuitModal(false);
+    openLeaderboard();
   }
 
   async function handleSubmitScore() {
@@ -491,6 +522,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     setScoreSubmitted(false);
     setInitials('');
     setSubmittingScore(false);
+    setShowQuitModal(false);
     slideAnim.setValue(0);
   }
 
@@ -504,6 +536,11 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       <View style={styles.header}>
         <Text style={styles.headerText}>MOVIE LADDER</Text>
         <View style={styles.headerButtons}>
+          {!gameOver && (
+            <Pressable onPress={quit}>
+              <Text style={[styles.leaderboardButtonText, styles.quitButtonText]}>🚪 QUIT</Text>
+            </Pressable>
+          )}
           <Pressable onPress={() => setShowChain(true)}>
             <Text style={styles.leaderboardButtonText}>🔗 CHAIN</Text>
           </Pressable>
@@ -621,7 +658,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
         <ConnectionChainModal game={game} history={history} onClose={() => setShowChain(false)} />
       )}
 
-      {gameOver && scoreQualifies && !scoreSubmitted && (
+      {gameOver && scoreQualifies && !scoreSubmitted && !showQuitModal && (
         <ScoreSubmitModal
           score={score}
           initials={initials}
@@ -629,6 +666,21 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
           submitting={submittingScore}
           onSubmit={handleSubmitScore}
           onSkip={handleSkipScoreSubmit}
+        />
+      )}
+
+      {showQuitModal && (
+        <QuitModal
+          score={score}
+          scoreQualifies={scoreQualifies}
+          scoreSubmitted={scoreSubmitted}
+          initials={initials}
+          onChangeInitials={setInitials}
+          submitting={submittingScore}
+          onSubmit={handleSubmitScore}
+          onSkip={handleSkipScoreSubmit}
+          onViewChain={() => setShowChain(true)}
+          onDone={finishQuit}
         />
       )}
     </View>
@@ -781,6 +833,85 @@ function ScoreSubmitModal({
   );
 }
 
+function QuitModal({
+  score,
+  scoreQualifies,
+  scoreSubmitted,
+  initials,
+  onChangeInitials,
+  submitting,
+  onSubmit,
+  onSkip,
+  onViewChain,
+  onDone,
+}: {
+  score: number;
+  scoreQualifies: boolean;
+  scoreSubmitted: boolean;
+  initials: string;
+  onChangeInitials: (value: string) => void;
+  submitting: boolean;
+  onSubmit: () => void;
+  onSkip: () => void;
+  onViewChain: () => void;
+  onDone: () => void;
+}) {
+  return (
+    <Modal transparent animationType="fade">
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.modalCard, styles.scoreSubmitCard]}>
+          <Text style={[styles.modalTitle, styles.centeredText]}>👋 Thanks for playing!</Text>
+          <Text style={[styles.modalScore, styles.centeredText]}>Final score: {score}</Text>
+
+          {scoreQualifies && !scoreSubmitted && (
+            <>
+              <Text style={[styles.modalLine, styles.centeredText]}>
+                🎉 That’s a new top-10 high score! Enter your initials:
+              </Text>
+              <TextInput
+                style={styles.initialsInput}
+                value={initials}
+                onChangeText={(t) => onChangeInitials(t.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3))}
+                maxLength={3}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                placeholder="ABC"
+                placeholderTextColor={colors.textSecondary}
+                autoFocus
+              />
+              <View style={styles.betButtonRow}>
+                <Pressable style={styles.betButtonSlot} onPress={onSkip}>
+                  <View style={styles.buttonSecondary}>
+                    <Text style={styles.buttonSecondaryText}>SKIP</Text>
+                  </View>
+                </Pressable>
+                <Pressable
+                  style={styles.betButtonSlot}
+                  disabled={initials.length === 0 || submitting}
+                  onPress={onSubmit}
+                >
+                  <View style={[styles.button, (initials.length === 0 || submitting) && styles.buttonDisabled]}>
+                    <Text style={styles.buttonText}>{submitting ? 'SAVING…' : 'SUBMIT ▶'}</Text>
+                  </View>
+                </Pressable>
+              </View>
+            </>
+          )}
+
+          {scoreSubmitted && <Text style={[styles.modalLine, styles.centeredText]}>✅ Score saved!</Text>}
+
+          <Pressable style={styles.buttonSecondaryFull} onPress={onViewChain}>
+            <Text style={styles.buttonSecondaryText}>🔗 VIEW FULL CHAIN</Text>
+          </Pressable>
+          <Pressable style={styles.button} onPress={onDone}>
+            <Text style={styles.buttonText}>SEE HIGH SCORES ▶</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function ResultModal({
   game,
   result,
@@ -876,6 +1007,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 0.5,
   },
+  quitButtonText: { color: colors.textSecondary },
   // Pinned above the scrollable board, like chart-ladder's own
   // LEVEL/SCORE subheader, so it stays visible regardless of scroll
   // position -- the whole point of "prominently."
@@ -999,6 +1131,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: 'center',
+  },
+  buttonSecondaryFull: {
+    backgroundColor: colors.cellEmpty,
+    borderWidth: 1.5,
+    borderColor: colors.cellBorder,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    width: '100%',
+    marginTop: 14,
+    marginBottom: 10,
   },
   buttonText: { color: '#fff', fontWeight: '800', letterSpacing: 1 },
   buttonDisabled: { opacity: 0.5 },
