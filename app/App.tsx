@@ -15,9 +15,11 @@ const SLIDE_DURATION_MS = 450;
 
 // CLAUDE.md section 5b's scoring/strikes spec, escalating per floor
 // (decided 2026-07-31, replacing the original flat-rate version): floor N
-// (1-indexed) pays 5*N points per correct tile and a 10*N-point completion
-// bonus, plus a flat +10 more on top of that bonus if the floor had zero
-// strikes; 5 strikes ends the run.
+// (1-indexed) pays 5*N points per correct tile; 5 strikes ends the run.
+// Completion bonus reworked 2026-08-01: floor N pays 2*N points per
+// correct answer THAT FLOOR (a miss doesn't earn its 2*N, even though the
+// correct movie still gets auto-placed -- see groupCorrectCount below),
+// plus a flat +10 more on top of that bonus if the floor had zero strikes.
 // Betting: offered once per completed floor (from floor 2 onward -- see
 // the interview this was built from, not a CLAUDE.md-decided number), now
 // staking the entire NEXT FLOOR rather than a single pick (decided
@@ -30,7 +32,7 @@ const SLIDE_DURATION_MS = 450;
 // changes that.
 const MAX_STRIKES = 5;
 const TILE_POINTS_PER_FLOOR = 5;
-const FLOOR_BONUS_PER_FLOOR = 10;
+const FLOOR_BONUS_PER_CORRECT_PER_FLOOR = 2;
 const FLOOR_NO_STRIKE_BONUS = 10;
 // Skip the bet offer after the very first floor, so a new player gets one
 // clean floor before stakes show up (decided in the interview for this
@@ -76,6 +78,11 @@ interface SavedGame {
   score: number;
   strikes: number;
   groupHadStrike: boolean;
+  // How many of this floor's picks so far were correct -- only correct
+  // picks earn the per-correct-answer completion bonus (see the constants
+  // comment above), so this has to be tracked separately from just
+  // "reached MAX_STACK_TILES," which every floor does regardless of misses.
+  groupCorrectCount: number;
   floorScore: number;
   // Whether the most recently completed floor (the one floorScore/
   // floorBetWon describe) had zero strikes / had its bet won -- both only
@@ -208,6 +215,12 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   // built -- resets every time a floor completes. Decides that floor's
   // +10 no-strike bonus, independent of the run's total strike count.
   const [groupHadStrike, setGroupHadStrike] = useState(() => savedGame?.groupHadStrike ?? false);
+  // How many correct picks so far in the group of 5 currently being built --
+  // resets every time a floor completes. Only correct picks earn the
+  // per-correct-answer completion bonus.
+  const [groupCorrectCount, setGroupCorrectCount] = useState(
+    () => savedGame?.groupCorrectCount ?? 0
+  );
   // Points the most recently completed floor earned, shown in the
   // milestone banner. Only meaningful while `milestone` is true.
   const [floorScore, setFloorScore] = useState(() => savedGame?.floorScore ?? 0);
@@ -271,6 +284,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       score,
       strikes,
       groupHadStrike,
+      groupCorrectCount,
       floorScore,
       floorHadNoStrikes,
       floorBetWon,
@@ -291,6 +305,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     score,
     strikes,
     groupHadStrike,
+    groupCorrectCount,
     floorScore,
     floorHadNoStrikes,
     floorBetWon,
@@ -347,6 +362,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
 
     const newStrikes = correct ? strikes : Math.min(MAX_STRIKES, strikes + 1);
     const thisGroupHadStrike = groupHadStrike || !correct;
+    const thisGroupCorrectCount = groupCorrectCount + (correct ? 1 : 0);
 
     if (correct) setScore((s) => s + tileValue);
     if (!correct) setStrikes(newStrikes);
@@ -370,7 +386,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     if (floorComplete) {
       const floorNum = floorNumberFor(floorsCompleted);
       const noStrikeBonus = thisGroupHadStrike ? 0 : FLOOR_NO_STRIKE_BONUS;
-      const completionBonus = FLOOR_BONUS_PER_FLOOR * floorNum + noStrikeBonus;
+      const completionBonus = FLOOR_BONUS_PER_CORRECT_PER_FLOOR * floorNum * thisGroupCorrectCount + noStrikeBonus;
       // isBetFloor here reflects the outcome of every earlier pick this
       // floor (it would already be false if any of them missed -- see
       // above), so "still true AND this pick was correct too" is exactly
@@ -383,9 +399,11 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       setFloorBetWon(betWon);
       setIsBetFloor(false);
       setGroupHadStrike(false);
+      setGroupCorrectCount(0);
       setFloorsCompleted((n) => n + 1);
     } else {
       setGroupHadStrike(thisGroupHadStrike);
+      setGroupCorrectCount(thisGroupCorrectCount);
     }
 
     if (newStrikes >= MAX_STRIKES) {
@@ -460,6 +478,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     setScore(0);
     setStrikes(0);
     setGroupHadStrike(false);
+    setGroupCorrectCount(0);
     setFloorScore(0);
     setFloorHadNoStrikes(false);
     setFloorBetWon(false);

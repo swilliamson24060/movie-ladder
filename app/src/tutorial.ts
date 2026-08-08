@@ -147,7 +147,7 @@ export const COPY: Record<Phase, { title?: string; body: string; button: string 
   },
   milestone: {
     body:
-      'Land 5 correct movies in a row without a strike and the stack clears off the board, leaving just the top tile to keep building from. Scoring climbs every floor:\n• Floor 1 pays 5 points per correct movie, Floor 2 pays 10, Floor 3 pays 15 — 5 more per tile each floor (as you just saw)\n• Completing a floor pays a bonus too: 10 points for Floor 1, 20 for Floor 2, 30 for Floor 3 — 10 more each floor\n• Zero strikes on a floor adds +10 more on top of that floor’s bonus\n\nA strike anywhere in the floor still lets you finish it — you just miss out on that +10.',
+      'Land 5 correct movies in a row without a strike and the stack clears off the board, leaving just the top tile to keep building from. Scoring climbs every floor:\n• Floor 1 pays 5 points per correct movie, Floor 2 pays 10, Floor 3 pays 15 — 5 more per tile each floor (as you just saw)\n• Completing a floor pays a bonus too: 2 points per correct answer that floor, doubling to 4 on Floor 2, 6 on Floor 3 — 2 more per correct answer each floor. A miss doesn’t earn its share, even though the correct movie still gets placed for you.\n• Zero strikes on a floor adds +10 more on top of that floor’s bonus\n\nA strike anywhere in the floor still lets you finish it — you just miss out on the strike’s own bonus share and the +10.',
     button: 'NEXT ▶',
   },
   'betting-intro': {
