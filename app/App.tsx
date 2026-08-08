@@ -235,6 +235,11 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   // of run state.
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[] | null>(null);
+  // Connection-chain review: openable any time via the header button,
+  // during a live run or after RUN OVER alike -- promised by the tutorial's
+  // closing copy ("Tap 🔗 VIEW CONNECTION CHAIN any time during a real
+  // run"), which shipped before this button did.
+  const [showChain, setShowChain] = useState(false);
   // Whether this run's final score currently makes the top 10 -- re-checked
   // against the live leaderboard whenever the game-over screen mounts
   // (including resuming straight into it after a reload), so it's derived
@@ -479,9 +484,14 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerText}>MOVIE LADDER</Text>
-        <Pressable onPress={openLeaderboard}>
-          <Text style={styles.leaderboardButtonText}>🏆 SCORES</Text>
-        </Pressable>
+        <View style={styles.headerButtons}>
+          <Pressable onPress={() => setShowChain(true)}>
+            <Text style={styles.leaderboardButtonText}>🔗 CHAIN</Text>
+          </Pressable>
+          <Pressable onPress={openLeaderboard}>
+            <Text style={styles.leaderboardButtonText}>🏆 SCORES</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.statusBar}>
@@ -588,6 +598,10 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
         <LeaderboardModal entries={leaderboardEntries} onClose={() => setShowLeaderboard(false)} />
       )}
 
+      {showChain && (
+        <ConnectionChainModal game={game} history={history} onClose={() => setShowChain(false)} />
+      )}
+
       {gameOver && scoreQualifies && !scoreSubmitted && (
         <ScoreSubmitModal
           score={score}
@@ -631,6 +645,59 @@ function LeaderboardModal({
               ))}
             </ScrollView>
           )}
+          <Pressable style={styles.button} onPress={onClose}>
+            <Text style={styles.buttonText}>CLOSE</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ConnectionChainModal({
+  game,
+  history,
+  onClose,
+}: {
+  game: MovieLadder;
+  history: Set<number>;
+  onClose: () => void;
+}) {
+  // `history` is a Set, but insertion order is exactly this run's chain
+  // order (see the SavedGame docs above the state) -- every movie ever
+  // placed, across every floor, not just the current visible stack (which
+  // gets collapsed down to one tile at each milestone).
+  const chain = [...history];
+
+  return (
+    <Modal transparent animationType="fade">
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>🔗 THE CHAIN SO FAR</Text>
+          <ScrollView style={styles.modalScroll}>
+            {chain.map((id, i) => {
+              const movie = game.movie(id);
+              const nextId = chain[i + 1];
+              const matchLines = nextId !== undefined ? formatMatches(game.connectionsBetween(id, nextId)) : [];
+              return (
+                <View key={`${id}-${i}`}>
+                  <View style={styles.chainRow}>
+                    <Text style={styles.chainRank}>{i + 1}</Text>
+                    <View style={styles.chainCopy}>
+                      <Text style={styles.chainTitle}>{movie.title}</Text>
+                      <Text style={styles.chainMeta}>{movie.year}</Text>
+                    </View>
+                  </View>
+                  {matchLines.length > 0 && (
+                    <View style={styles.chainLinkRow}>
+                      <Text style={styles.chainLinkLine}>│</Text>
+                      <Text style={styles.chainReason}>{matchLines.join(' · ')}</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
           <Pressable style={styles.button} onPress={onClose}>
             <Text style={styles.buttonText}>CLOSE</Text>
           </Pressable>
@@ -779,6 +846,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 18,
     letterSpacing: 2,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 16,
   },
   leaderboardButtonText: {
     color: colors.yellow,
@@ -951,6 +1022,47 @@ const styles = StyleSheet.create({
     color: colors.yellow,
     fontWeight: '800',
     fontSize: 15,
+  },
+  chainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 2,
+  },
+  chainRank: {
+    width: 24,
+    color: colors.textSecondary,
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  chainCopy: { flex: 1 },
+  chainTitle: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  chainMeta: {
+    color: colors.textSecondary,
+    fontSize: 11,
+  },
+  chainLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 2,
+  },
+  chainLinkLine: {
+    width: 24,
+    textAlign: 'center',
+    color: colors.blue,
+    fontWeight: '900',
+  },
+  chainReason: {
+    flex: 1,
+    color: colors.blue,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.4,
   },
   modalBackdrop: {
     flex: 1,
