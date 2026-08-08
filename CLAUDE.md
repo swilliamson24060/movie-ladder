@@ -354,6 +354,40 @@ correctly through the new modal architecture) all passed with no rework
 needed. Deployed and reconfirmed live with a clean console on
 `swilliamson24060.github.io/movie-ladder`.
 
+**Connection-chain viewer added, 2026-08-01.** `TUTORIAL_FLOW.md`'s
+closing copy and this section's original spec (line 190 above) both
+described a "🔗 VIEW CONNECTION CHAIN" button (reusing chart-ladder's
+`ConnectionChainModal` pattern), and the tutorial script's `done` phase
+copy already said "Tap 🔗 VIEW CONNECTION CHAIN any time during a real
+run" -- but no such button actually existed in `app/App.tsx`, tutorial
+copy for a feature that shipped nowhere. Fixed by porting chart-ladder's
+`ConnectionChainModal` (`packages/mobile/src/components/
+ConnectionChainModal.tsx` in the Chartcross repo) to movie-ladder's own
+data model: a new `🔗 CHAIN` header button, next to `🏆 SCORES`, opens a
+`ConnectionChainModal` listing every movie placed this run, in order,
+with the connection reason between each consecutive pair. Movie-ladder's
+`history` state (a `Set<number>`, insertion-ordered in JS) already holds
+exactly this — every movie ever placed across the *whole* run, not just
+the current visible stack (which collapses to one tile at each milestone
+clear) — so the modal reads `[...history]` directly rather than needing
+new state. Connection reasons reuse `game.connectionsBetween()` +
+`formatMatches()`, the same helpers `ResultModal` and the tutorial
+already use, so a chain link's text matches the wrong-pick modal's
+wording exactly. Being a header button, it's reachable during a live
+run AND on the RUN OVER screen alike (same header renders in both
+states) — no separate button was needed for the "review before you
+restart" framing; it completes the already-documented restart flow
+(RUN OVER → `PLAY AGAIN` restart, `ScoreSubmitModal` for a qualifying
+score, now `🔗 CHAIN` to review the path) all being available at once,
+non-blocking. Verified in-browser: opened mid-run over a live round,
+closed cleanly back into it; opened on a forced RUN OVER screen
+alongside a qualifying-score modal and the restart button, all three
+coexisting without blocking each other; the rendered chain for a real
+wrong-pick auto-advance matched the `ResultModal`'s own connection text
+exactly ("Same director — Fruit Chan"). No changes to `history`,
+`stack`, save-game persistence, or scoring — purely additive UI reading
+existing state.
+
 **Decoy-selection requirement (the actual engineering delta from chart-
 ladder).** `round_selector.py`'s current `ChartLadder.build_round()` picks
 3 *tile-type* labels and lets the engine silently choose the next song —
