@@ -429,6 +429,42 @@ Three real ambiguities resolved via `AskUserQuestion` before building
   boundaries. Tutorial's `milestone` phase copy updated to describe the
   new per-correct-answer formula instead of the old flat `10*N` numbers.
 
+**Quit button added, 2026-08-01.** Previously the only way to end a run
+was losing (5 strikes) — there was no way to voluntarily stop and still
+get the same "check the leaderboard / review the chain" send-off
+CLAUDE.md's original spec (line 190) describes for a real game over.
+Added a `🚪 QUIT` header button, next to `🔗 CHAIN`/`🏆 SCORES`, visible
+only while `!gameOver` (no reason to offer it once the run's already
+over). `quit()` clears every in-progress overlay (`pendingResult`,
+`milestone`, `betOffer`, `betBlocked`, `isBetFloor`, `round`) before
+setting `gameOver = true`, so quitting mid-pick or mid-milestone can't
+leave a stray overlay stacked underneath the new modal — verified
+in-browser by quitting with a `ResultModal` actively open. Setting
+`gameOver` reuses the exact same underlying state a strikeout triggers
+(the `wouldQualify` effect, the RUN OVER banner, `PLAY AGAIN` restart),
+just reached through a new `QuitModal` instead of the automatic
+`ScoreSubmitModal` — a new `showQuitModal` flag suppresses that
+automatic modal (`gameOver && scoreQualifies && !scoreSubmitted &&
+!showQuitModal`) so the two never show at once. `QuitModal` itself: a
+"👋 Thanks for playing!" header, the same inline initials-entry UI as
+`ScoreSubmitModal` when `scoreQualifies && !scoreSubmitted` (reuses
+`handleSubmitScore`/`handleSkipScoreSubmit` directly, no duplicated
+logic), a persistent "🔗 VIEW FULL CHAIN" button that opens
+`ConnectionChainModal` on top without closing the quit modal (same
+nested-modal pattern already verified for the chain viewer earlier this
+session), and a single "SEE HIGH SCORES ▶" button that closes
+`QuitModal` and calls `openLeaderboard()` — satisfying "once the dialog
+is closed, the player is taken to a high scores screen" as one action
+regardless of whether a score was actually submitted. Verified
+in-browser end to end: quit with a qualifying score → submitted via the
+inline form (confirmed against a real Firestore write, visible in the
+leaderboard immediately after) → viewed the chain mid-modal without
+losing quit-modal state → closed into the leaderboard → closed that into
+a normal RUN OVER screen with `PLAY AGAIN` intact; separately, quit with
+a non-qualifying score showed no initials form, just the chain button
+and SEE HIGH SCORES, confirming the conditional. No console errors in
+either path.
+
 **Decoy-selection requirement (the actual engineering delta from chart-
 ladder).** `round_selector.py`'s current `ChartLadder.build_round()` picks
 3 *tile-type* labels and lets the engine silently choose the next song —
