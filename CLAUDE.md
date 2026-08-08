@@ -388,6 +388,47 @@ exactly ("Same director — Fruit Chan"). No changes to `history`,
 `stack`, save-game persistence, or scoring — purely additive UI reading
 existing state.
 
+**Floor-completion bonus reworked again, decided 2026-08-01.** Supersedes
+the "Floor completion bonus now escalates too: `10*N`" bullet in the
+scoring/betting rework entry above — that flat `FLOOR_BONUS_PER_FLOOR`
+formula is gone, replaced with `FLOOR_BONUS_PER_CORRECT_PER_FLOOR = 2`
+points per correct answer that floor, still scaled by floor number:
+floor N's completion bonus is `2*N` points **times how many of that
+floor's picks were actually correct**, not a flat per-floor number.
+Three real ambiguities resolved via `AskUserQuestion` before building
+(same pattern as every prior scoring change this session):
+- **Still scales by floor**, not flat everywhere — floor 2 pays 4/correct,
+  floor 3 pays 6/correct, etc., preserving the "later floors pay more"
+  shape from the original rework.
+- **"Correct answer" means the player's own correct picks only**, not a
+  flat 5 (or 4, see below) regardless of misses. A miss still gets the
+  correct movie auto-placed for the player (per CLAUDE.md section 5b),
+  but that auto-placed tile does NOT earn its `2*N` share — only picks
+  the player got right themselves count toward the bonus.
+- **The flat +10 zero-strike bonus stays**, unchanged, stacking on top of
+  the new per-correct-answer bonus exactly as it did on top of the old
+  flat one.
+- Betting's 2x doubling (`completionBonus * 2` on a won bet) needed no
+  changes — it doubles whatever `completionBonus` computes to, and that
+  expression was the only thing that changed.
+- New `groupCorrectCount` state (persisted in `SavedGame`, reset on floor
+  completion or `restart()`) tracks correct picks in the floor currently
+  being built, following the exact same lifecycle as the existing
+  `groupHadStrike` boolean it sits next to. **Correction to a subtlety
+  easy to get backwards:** each floor is `MAX_STACK_TILES = 5` tiles
+  *total on the board*, but the first of those 5 is always the anchor
+  tile already standing from before the floor started — so a floor is
+  only **4 new picks**, and `groupCorrectCount` maxes out at 4 on a clean
+  floor, not 5. Verified in-browser via temporary debug hooks driving
+  real picks: a floor with 1 pre-existing strike and 3 correct picks paid
+  a bonus of exactly 6 (`2*1*3`, floor 1, no zero-strike bonus since the
+  floor had a strike); the next floor, all 4 picks correct with zero
+  strikes, paid exactly 26 (`2*2*4 + 10`, floor 2) — both matched the
+  formula exactly, confirming `groupCorrectCount` counts only this
+  floor's own correct picks and resets correctly across floor and bet
+  boundaries. Tutorial's `milestone` phase copy updated to describe the
+  new per-correct-answer formula instead of the old flat `10*N` numbers.
+
 **Decoy-selection requirement (the actual engineering delta from chart-
 ladder).** `round_selector.py`'s current `ChartLadder.build_round()` picks
 3 *tile-type* labels and lets the engine silently choose the next song —
