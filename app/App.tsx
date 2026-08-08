@@ -17,7 +17,7 @@ import MovieCell from './src/components/MovieCell';
 import LadderStack, { MAX_BOARD_WIDTH, MAX_STACK_TILES } from './src/components/LadderStack';
 import { formatMatches, roundPrompt } from './src/tutorial';
 import { colors } from './src/theme';
-import { fetchTopScores, LeaderboardEntry, submitScore, wouldQualify } from './src/leaderboard';
+import { fetchTopScores, LeaderboardResult, submitScore, wouldQualify } from './src/leaderboard';
 
 const SLIDE_DURATION_MS = 450;
 
@@ -358,7 +358,12 @@ function GameScreen({
   // not yet fetched), openable any time via the header button regardless
   // of run state.
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[] | null>(null);
+  const [leaderboardResult, setLeaderboardResult] = useState<LeaderboardResult | null>(null);
+  // True when the leaderboard was opened as the last step of the quit flow.
+  // Closing it then ends the session entirely (clears the save and reloads)
+  // rather than dropping the player back on the RUN OVER screen -- see
+  // endSessionAfterQuit.
+  const [quitFlowActive, setQuitFlowActive] = useState(false);
   // Connection-chain review: openable any time via the header button,
   // during a live run or after RUN OVER alike -- promised by the tutorial's
   // closing copy ("Tap 🔗 VIEW CONNECTION CHAIN any time during a real
@@ -440,8 +445,41 @@ function GameScreen({
 
   function openLeaderboard() {
     setShowLeaderboard(true);
-    setLeaderboardEntries(null);
-    fetchTopScores(mode).then(setLeaderboardEntries);
+    setLeaderboardResult(null);
+    fetchTopScores(mode).then(setLeaderboardResult);
+  }
+
+  /**
+   * Ends the session for real at the end of the quit flow: drops the saved
+   * run and reloads the page.
+   *
+   * Both halves matter. Clearing the save is what lets the player back to
+   * the start screen at all -- the autosave resumes any run that exists on
+   * boot (and deliberately skips the tutorial when it does), so without
+   * this a quit would just be resumed on the next visit. The reload is what
+   * lets a deployed update actually reach them: this is a static web build,
+   * so a player who never closes the tab keeps running whatever JS bundle
+   * they first loaded, however many times they quit and replay.
+   *
+   * Order matters: clear first, reload second, and do nothing in between --
+   * the autosave effect re-persists on every state change, so any state
+   * update after the clear would write the run straight back.
+   */
+  function endSessionAfterQuit() {
+    try {
+      localStorage.removeItem(SAVE_KEY);
+    } catch {
+      // Storage unavailable -- there was no save to clear anyway.
+    }
+    if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
+      window.location.reload();
+      return;
+    }
+    // Native (no window.location): fall back to the in-app equivalent --
+    // back to the mode selector with the save already cleared.
+    setQuitFlowActive(false);
+    setShowLeaderboard(false);
+    onChangeMode();
   }
 
   // Ends the run early, same underlying "run over" state a strikeout
@@ -464,9 +502,12 @@ function GameScreen({
   // QuitModal's own "done" action -- closes it and hands off straight to
   // the high-scores screen, per the ask ("once the dialog is closed, the
   // player is taken to a high scores screen"). Works whether or not the
-  // player submitted/skipped a qualifying score first.
+  // player submitted/skipped a qualifying score first. Marking the quit
+  // flow here is what makes closing that leaderboard end the session
+  // (endSessionAfterQuit) instead of returning to the RUN OVER screen.
   function finishQuit() {
     setShowQuitModal(false);
+    setQuitFlowActive(true);
     openLeaderboard();
   }
 
@@ -636,6 +677,7 @@ function GameScreen({
     setInitials('');
     setSubmittingScore(false);
     setShowQuitModal(false);
+    setQuitFlowActive(false);
     slideAnim.setValue(0);
   }
 
@@ -781,7 +823,17 @@ function GameScreen({
       )}
 
       {showLeaderboard && (
-        <LeaderboardModal entries={leaderboardEntries} onClose={() => setShowLeaderboard(false)} />
+        <LeaderboardModal
+          result={leaderboardResult}
+          mode={mode}
+          onClose={() => {
+            if (quitFlowActive) {
+              endSessionAfterQuit();
+              return;
+            }
+            setShowLeaderboard(false);
+          }}
+        />
       )}
 
       {showChain && (
@@ -823,22 +875,35 @@ function GameScreen({
 }
 
 function LeaderboardModal({
-  entries,
+  result,
+  mode,
   onClose,
 }: {
-  entries: LeaderboardEntry[] | null;
+  result: LeaderboardResult | null; // null = still loading
+  mode: Mode;
   onClose: () => void;
 }) {
+  const entries = result?.entries ?? [];
   return (
     <Modal transparent animationType="fade">
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>🏆 HIGH SCORES</Text>
-          {entries === null ? (
+          <Text style={styles.modalTitle}>🏆 HIGH SCORES — {MODE_CONFIG[mode].label}</Text>
+          {result === null ? (
             <Text style={styles.modalLine}>Loading…</Text>
+          ) : result.status === 'unavailable' ? (
+            // Only shown when the fetch actually failed/timed out. An empty
+            // board reports status 'ok' with no entries and gets the
+            // "be the first" message below instead -- the two used to be
+            // indistinguishable, which made a brand-new easy board look
+            // broken. See LeaderboardResult in leaderboard.ts.
+            <Text style={styles.modalLine}>
+              Couldn’t load the leaderboard right now. Your run still counts — try again in a
+              moment.
+            </Text>
           ) : entries.length === 0 ? (
             <Text style={styles.modalLine}>
-              No scores yet — be the first! (Or the leaderboard isn’t configured yet.)
+              No scores yet on the {MODE_CONFIG[mode].label} board — be the first!
             </Text>
           ) : (
             <ScrollView style={styles.modalScroll}>

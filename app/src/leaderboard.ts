@@ -75,6 +75,18 @@ export interface LeaderboardEntry {
   score: number;
 }
 
+/**
+ * Distinguishes "this board is genuinely empty" from "we couldn't read the
+ * board." Both used to come back as an empty array, which forced the UI to
+ * hedge ("No scores yet — be the first! Or the leaderboard isn't configured
+ * yet."). That hedge became actively wrong once easy mode shipped with its
+ * own brand-new collection: an empty easy board is the expected state on
+ * day one, not a symptom of misconfiguration.
+ */
+export type LeaderboardResult =
+  | { status: 'ok'; entries: LeaderboardEntry[] }
+  | { status: 'unavailable'; entries: [] };
+
 let app: FirebaseApp | null = null;
 
 function getApp(): FirebaseApp {
@@ -97,11 +109,12 @@ function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
   ]);
 }
 
-/** Top 10 scores for one mode, highest first. Empty array on any failure or
- * timeout. */
-export async function fetchTopScores(mode: Mode): Promise<LeaderboardEntry[]> {
+/** Top 10 scores for one mode, highest first. Reports `unavailable` (rather
+ * than an empty board) on any failure or timeout -- see LeaderboardResult. */
+export async function fetchTopScores(mode: Mode): Promise<LeaderboardResult> {
+  const unavailable: LeaderboardResult = { status: 'unavailable', entries: [] };
   return withTimeout(
-    (async () => {
+    (async (): Promise<LeaderboardResult> => {
       try {
         const db = getFirestore(getApp());
         const q = query(
@@ -110,15 +123,21 @@ export async function fetchTopScores(mode: Mode): Promise<LeaderboardEntry[]> {
           limit(LEADERBOARD_SIZE)
         );
         const snapshot = await getDocs(q);
-        return snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return { name: String(data.name ?? '???'), score: Number(data.score ?? 0) };
-        });
+        // A query against a collection with no documents succeeds and
+        // returns an empty snapshot -- Firestore collections are implicit,
+        // so "no docs yet" is 'ok', not an error.
+        return {
+          status: 'ok',
+          entries: snapshot.docs.map((doc) => {
+            const data = doc.data();
+            return { name: String(data.name ?? '???'), score: Number(data.score ?? 0) };
+          }),
+        };
       } catch {
-        return [];
+        return unavailable;
       }
     })(),
-    []
+    unavailable
   );
 }
 
@@ -127,9 +146,13 @@ export async function fetchTopScores(mode: Mode): Promise<LeaderboardEntry[]> {
  * brand new player who bounced immediately for a name entry. */
 export async function wouldQualify(score: number, mode: Mode): Promise<boolean> {
   if (score <= 0) return false;
-  const top = await fetchTopScores(mode);
-  if (top.length < LEADERBOARD_SIZE) return true;
-  const lowest = top[top.length - 1].score;
+  const result = await fetchTopScores(mode);
+  // If the board couldn't be read, don't offer the initials prompt: the
+  // submission would hit the same unreachable Firestore and fail silently,
+  // so the player would type their name into a form that does nothing.
+  if (result.status !== 'ok') return false;
+  if (result.entries.length < LEADERBOARD_SIZE) return true;
+  const lowest = result.entries[result.entries.length - 1].score;
   return score > lowest;
 }
 
