@@ -14,7 +14,7 @@
  * matches TUTORIAL_FLOW.md's script and copy as written.
  */
 
-import { MovieLadder } from './movieLadder';
+import { Mode, MODE_CONFIG, ModeEngine, MovieLadder } from './movieLadder';
 
 export type Phase =
   | 'intro'
@@ -63,6 +63,30 @@ export function formatMatches(matches: Record<string, string[]>): string[] {
   );
 }
 
+/**
+ * Noun phrases for easy mode's up-front category hint, e.g. "WHICH MOVIE
+ * SHARES A DIRECTOR WITH THE TOP TILE?". Separate from CONNECTION_LABELS
+ * because those are sentence-fragment labels for the after-the-fact
+ * explanation ("Same director — Quentin Tarantino"), which don't read
+ * correctly in the question form.
+ */
+const HINT_NOUNS: Record<string, string> = {
+  same_director: 'A DIRECTOR',
+  shared_cast_member: 'A CAST MEMBER',
+  same_screenwriter: 'A SCREENWRITER',
+  same_composer: 'A COMPOSER',
+  same_award: 'AN AWARD',
+  same_series: 'A FRANCHISE',
+};
+
+/** The round prompt, naming the connection category when a hint applies. */
+export function roundPrompt(hintType: string | null): string {
+  const noun = hintType ? HINT_NOUNS[hintType] : null;
+  return noun
+    ? `WHICH MOVIE SHARES ${noun} WITH THE TOP TILE?`
+    : 'WHICH MOVIE CONNECTS TO THE TOP TILE?';
+}
+
 function findMovie(game: MovieLadder, title: string, year: number): number {
   for (let i = 0; i < game.count; i++) {
     const m = game.movie(i);
@@ -91,7 +115,7 @@ export interface TutorialScript {
   betRound: Record<string, string[]>; // Kill Bill 2 -> Jackie Brown
 }
 
-export function buildTutorialScript(game: MovieLadder): TutorialScript {
+export function buildTutorialScript(game: MovieLadder, engine: ModeEngine): TutorialScript {
   const pulpFiction = findMovie(game, 'Pulp Fiction', 1994);
   const killBill1 = findMovie(game, 'Kill Bill: Volume 1', 2003);
   const killBill2 = findMovie(game, 'Kill Bill: Volume 2', 2004);
@@ -114,21 +138,83 @@ export function buildTutorialScript(game: MovieLadder): TutorialScript {
     jackieBrown,
     titanic,
     soundOfMusic,
-    correctRound1: game.connectionsBetween(pulpFiction, killBill1),
-    correctRound2: game.connectionsBetween(killBill1, killBill2),
-    betRound: game.connectionsBetween(killBill2, jackieBrown),
+    // Mode-scoped deliberately: in easy mode the tutorial must not teach a
+    // connection type that mode doesn't count (all three scripted pairs
+    // also match on screenwriter, which easy excludes). Verified that every
+    // scripted pair still has at least one qualifying connection under
+    // easy's reduced type list, and that all 10 scripted movies clear
+    // easy's sitelink floor, so the same script is valid in both modes.
+    correctRound1: engine.connectionsBetween(pulpFiction, killBill1),
+    correctRound2: engine.connectionsBetween(killBill1, killBill2),
+    betRound: engine.connectionsBetween(killBill2, jackieBrown),
   };
 }
 
-export const COPY: Record<Phase, { title?: string; body: string; button: string }> = {
+/**
+ * The intro's connection-type list has to match the mode actually being
+ * played -- easy counts only three of the six types, so listing all six
+ * would teach a rule the game isn't using. Built per mode rather than
+ * hardcoded for that reason; everything else in the script is
+ * mode-independent (the scoring, betting and strike rules are identical in
+ * both modes -- see CLAUDE.md section 5c, which deliberately scoped the
+ * modes to *which rounds get built*, not to the run's economy).
+ */
+const INTRO_BODY: Record<Mode, string> = {
+  easy: [
+    'Every ladder starts with one movie already on the board. Your job: keep picking movies that connect to the one on top, for as long as you can.',
+    '',
+    'In EASY mode, connections come from:',
+    '• Same director',
+    '• Shared cast member',
+    '• Same franchise/series',
+    '',
+    'Easy mode also sticks to well-known movies, and tells you which category to look for before each round — so you know whether you’re hunting for a director or a cast member.',
+    '',
+    'Movies range from 1950 to 2026.',
+  ].join('\n'),
+  regular: [
+    'Every ladder starts with one movie already on the board. Your job: keep picking movies that connect to the one on top, for as long as you can.',
+    '',
+    'Connections come from:',
+    '• Same director',
+    '• Shared cast member',
+    '• Same screenwriter',
+    '• Same composer',
+    '• Same award (Academy Awards, AFI, BAFTA, Cannes, Golden Globe, Golden Raspberry, Palme d’Or, Screen Actors Guild, Sundance, or Writers Guild of America)',
+    '• Same franchise/series',
+    '',
+    'You don’t need to know which one applies — just that one exists.',
+    '',
+    'Movies range from 1950 to 2026.',
+  ].join('\n'),
+};
+
+/**
+ * The scripted round in 'pick-correct' shows a hint line in easy mode, so
+ * the copy explaining that round has to acknowledge it -- otherwise the
+ * tutorial demonstrates a UI element it never mentions.
+ */
+const PICK_CORRECT_BODY: Record<Mode, string> = {
+  easy:
+    'Each round shows you three movies. Exactly one connects to the movie on top of your stack — the other two share nothing with it at all. The prompt above the movies names the category to look for. Here, Kill Bill: Volume 1 (highlighted) is the right pick.',
+  regular:
+    'Each round shows you three movies. Exactly one connects to the movie on top of your stack — the other two share nothing with it at all. Here, Kill Bill: Volume 1 (highlighted) is the right pick.',
+};
+
+export type CopyBook = Record<Phase, { title?: string; body: string; button: string }>;
+
+export function buildCopy(mode: Mode): CopyBook {
+  return { ...COPY, intro: { ...COPY.intro, body: INTRO_BODY[mode] },
+    'pick-correct': { ...COPY['pick-correct'], body: PICK_CORRECT_BODY[mode] } };
+}
+
+const COPY: CopyBook = {
   intro: {
-    body:
-      'Every ladder starts with one movie already on the board. Your job: keep picking movies that connect to the one on top, for as long as you can.\n\nConnections come from:\n• Same director\n• Shared cast member\n• Same screenwriter\n• Same composer\n• Same award (Academy Awards, AFI, BAFTA, Cannes, Golden Globe, Golden Raspberry, Palme d’Or, Screen Actors Guild, Sundance, or Writers Guild of America)\n• Same franchise/series\n\nYou don’t need to know which one applies — just that one exists.\n\nMovies range from 1950 to 2026.',
+    body: INTRO_BODY.regular,
     button: 'NEXT ▶',
   },
   'pick-correct': {
-    body:
-      'Each round shows you three movies. Exactly one connects to the movie on top of your stack — the other two share nothing with it at all. Here, Kill Bill: Volume 1 (highlighted) is the right pick.',
+    body: PICK_CORRECT_BODY.regular,
     button: 'NEXT ▶',
   },
   'explain-correct': {

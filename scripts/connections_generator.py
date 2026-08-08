@@ -190,11 +190,20 @@ def main():
             title = row["title"]
             year = row.get("year", "")
 
+            sitelinks = row.get("sitelinks", "")
             movies[movie_id] = {
                 "title": title,
                 "year": int(year) if year else None,
                 "wikidata_id": movie_id,
                 "imdb_id": row.get("imdb_id") or None,
+                # Wikipedia sitelink count, carried through from films_enrich.py
+                # as a recognizability/popularity proxy. Shipped so the game can
+                # offer a difficulty mode that restricts the pool to
+                # better-known films (CLAUDE.md section 5c) -- the dataset's
+                # median is ~20, so roughly half of it is genuinely obscure and
+                # unplayable-by-reasoning for a typical player. Not a connection
+                # type and never groups anything; purely a per-movie attribute.
+                "sitelinks": int(sitelinks) if sitelinks else 0,
             }
 
             for conn_type, column in MULTI_VALUE_CONNECTIONS.items():
@@ -255,8 +264,17 @@ def main():
     movies_array = []
     for mid in ordered_movie_ids:
         m = movies[mid]
-        movies_array.append([m["title"], m["year"], m["wikidata_id"], m["imdb_id"]])
-    # movies_array columns, in order: [title, year, wikidata_id, imdb_id]
+        movies_array.append([m["title"], m["year"], m["wikidata_id"], m["imdb_id"],
+                             m["sitelinks"]])
+    # movies_array columns, in order: [title, year, wikidata_id, imdb_id, sitelinks]
+    # NOTE: sitelinks was appended LAST deliberately (2026-08-08) so existing
+    # positional readers of the first four fields keep working unchanged, and
+    # so adding it doesn't renumber any movie -- IDs are positions in this
+    # array, and the array's membership/order is decided by ordered_movie_ids
+    # above, which this column has no effect on. That matters because a saved
+    # game stores movie IDs (see App.tsx's SAVE_KEY): appending a field is
+    # save-compatible, whereas inserting one mid-tuple or changing which
+    # movies are referenced would not be.
 
     # finalize: drop groups below min size, cap oversized groups, remap to int IDs
     final = {}
@@ -286,7 +304,7 @@ def main():
             }
 
     result = {
-        "movie_fields": ["title", "year", "wikidata_id", "imdb_id"],
+        "movie_fields": ["title", "year", "wikidata_id", "imdb_id", "sitelinks"],
         "movies": movies_array,
         "connections": final,
     }
@@ -314,6 +332,22 @@ def main():
     print(f"{'connection_type':<24}{'groups':>8}{'movies covered':>16}{'avg size':>10}{'max size':>10}")
     for conn_type, s in sorted(stats.items(), key=lambda x: -x[1]["total_movies_involved"]):
         print(f"{conn_type:<24}{s['num_groups']:>8}{s['total_movies_involved']:>16}{s['avg_group_size']:>10}{s['largest_group']:>10}")
+
+    # Sitelink (recognizability) distribution of the shipped pool, so the
+    # difficulty-mode thresholds can be picked/sanity-checked at build time
+    # rather than needing a separate ad-hoc script. See CLAUDE.md section 5c.
+    shipped_sitelinks = sorted(m[4] for m in movies_array)
+    n_shipped = len(shipped_sitelinks)
+    if n_shipped:
+        print(f"\nsitelinks (recognizability proxy) across the {n_shipped} shipped movies:")
+        pct_line = "  " + "  ".join(
+            f"p{p}={shipped_sitelinks[min(int(n_shipped * p / 100), n_shipped - 1)]}"
+            for p in (10, 25, 50, 75, 90, 99))
+        print(pct_line + f"  max={shipped_sitelinks[-1]}")
+        for t in (25, 30, 40):
+            c = sum(1 for v in shipped_sitelinks if v >= t)
+            print(f"  >= {t} sitelinks: {c} movies ({c / n_shipped:.1%}) "
+                  f"-- candidate 'easy mode' pool")
 
     # Flag any connection type whose largest single group covers a huge slice
     # of the dataset -- same class of risk documented for genre in CLAUDE.md

@@ -95,6 +95,21 @@ rules (a few name collisions with unrelated same-named regional awards —
 e.g. a Portuguese "Golden Globe" and a Polish "Academy Award" — are
 explicitly excluded).
 
+### Difficulty modes
+
+The game ships two modes (see CLAUDE.md section 5c), which differ only in
+which rounds get built — scoring, strikes and betting are identical:
+
+| | Movie pool | Connection types | Hint |
+|---|---|---|---|
+| **Easy** | 3,765 (≥30 sitelinks) | director, cast, franchise | names the category |
+| **Regular** | all 15,674 | all six | none |
+
+The sitelink floor applies to the **whole round** — current movie, correct
+answer and both decoys — never just the correct answer, which would hand
+the player a "pick the one you've heard of" tell that doesn't otherwise
+exist (measured: 34% vs 33% by chance).
+
 Genre was considered and **dropped** — Wikidata's genre tagging is too
 broad to reliably build decoys against (see the "Genre tags may be too
 broad" finding in `CLAUDE.md` section 6). Films routinely carry a dozen-plus

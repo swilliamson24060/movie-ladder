@@ -68,6 +68,60 @@ ACTIVE_CONNECTION_TYPES = {
     "same_series",
 }
 
+# Difficulty modes (CLAUDE.md section 5c, added 2026-08-08). MUST stay
+# mirrored with app/src/movieLadder.ts's MODE_CONFIG -- the TS engine is a
+# deliberate from-scratch port rather than an import (movie-ladder shares no
+# code with chart-ladder, and the app can't import Python), so these two
+# definitions are the one place a divergence would silently change what the
+# game considers "connected."
+#
+#   min_sitelinks -- filters the ENTIRE round (current movie, correct
+#     answer, and both decoys). Applying it to only the correct answer would
+#     create a "pick whichever one you've heard of" tell that measurably
+#     doesn't exist today (34% vs 33% by chance over 400 simulated rounds).
+#   connection_types -- easy drops screenwriter/composer, the two a player
+#     is least likely to know. Measured reach in the shipped data:
+#     shared_cast_member 96.2% of movies, same_director 82.7%,
+#     same_series 8.4%.
+#   hint -- whether the app names the connection category before the pick.
+#     Python has no UI, so this is carried for parity/reference only.
+#
+# Easy's floor of 30 sitelinks keeps 3,765 of 15,674 movies; combined with
+# the reduced type list that leaves a median of 85 connections per movie and
+# a 1.4% dead-end rate (vs 0.4% for regular).
+MODE_CONFIG = {
+    "easy": {
+        "min_sitelinks": 30,
+        "connection_types": {"same_director", "shared_cast_member", "same_series"},
+        "hint": True,
+    },
+    "regular": {
+        "min_sitelinks": 0,
+        "connection_types": set(ACTIVE_CONNECTION_TYPES),
+        "hint": False,
+    },
+}
+
+# Naming this type in a hint would give the answer away rather than narrow
+# the search (a franchise is usually obvious from the title alone), so a
+# round whose only match is this shows no hint at all.
+NON_HINTABLE_TYPES = {"same_series"}
+
+# When a round matches on more than one hintable type, name the rarest --
+# it narrows the search most. Ordered by measured reach in the shipped data
+# (ascending): same_award 7.4% of movies, same_screenwriter 75.0%,
+# same_composer 78.0%, same_director 82.7%, shared_cast_member 96.2%.
+# Picking at random instead made the hint read "a cast member" in 93% of
+# easy rounds (measured over 800), since nearly every connected pair shares
+# cast. Mirrors HINT_PREFERENCE in app/src/movieLadder.ts.
+HINT_PREFERENCE = [
+    "same_award",
+    "same_screenwriter",
+    "same_composer",
+    "same_director",
+    "shared_cast_member",
+]
+
 
 @dataclass
 class CandidateMovie:
@@ -81,15 +135,28 @@ class Round:
     candidates: list  # list of CandidateMovie, length 3, shuffled
     correct_id: int
     matches: dict  # {conn_type: [shared values]} between current_id and correct_id
+    # Connection type to name up front as an easy-mode hint, or None for no
+    # hint (regular mode, or a round whose only match is non-hintable).
+    hint_type: str = None
 
 
 class MovieLadder:
-    def __init__(self, connections_path):
+    def __init__(self, connections_path, mode="regular"):
+        if mode not in MODE_CONFIG:
+            raise ValueError(f"unknown mode {mode!r}; expected one of {sorted(MODE_CONFIG)}")
+        self.mode = mode
+        self.config = MODE_CONFIG[mode]
         self.movies, self.movie_fields, self.connections = self._load(connections_path)
         # movie_id -> {conn_type: set(values)} -- every group this movie belongs to,
-        # across every connection type, keyed by the exact display value (e.g. a
-        # director's name) so it can be shown to the player as-is.
+        # across the modes's connection types, keyed by the exact display value
+        # (e.g. a director's name) so it can be shown to the player as-is.
         self._movie_values = self._build_movie_values()
+        # Movie IDs playable in this mode. Regular's floor is 0, so this is
+        # every movie; easy's floor drops it to the recognizable subset.
+        sitelinks_idx = self.movie_fields.index("sitelinks")
+        floor = self.config["min_sitelinks"]
+        self._pool = [i for i, row in enumerate(self.movies) if row[sitelinks_idx] >= floor]
+        self._pool_set = set(self._pool)
 
     @staticmethod
     def _load(path):
@@ -101,7 +168,7 @@ class MovieLadder:
     def _build_movie_values(self):
         movie_values = defaultdict(lambda: defaultdict(set))
         for conn_type, group_map in self.connections.items():
-            if conn_type not in ACTIVE_CONNECTION_TYPES:
+            if conn_type not in self.config["connection_types"]:
                 continue
             for value, id_list in group_map.items():
                 if len(id_list) < 2:
@@ -114,13 +181,35 @@ class MovieLadder:
         """Return the movie as a dict, e.g. {'title': ..., 'year': ..., ...}"""
         return dict(zip(self.movie_fields, self.movies[movie_id]))
 
+    @property
+    def pool_size(self):
+        """How many movies are playable in this mode (not the dataset total)."""
+        return len(self._pool)
+
     def random_movie(self, rng=None, exclude=None):
         rng = rng or random
         exclude = exclude or set()
-        while True:
-            mid = rng.randrange(len(self.movies))
-            if mid not in exclude:
+        available = [mid for mid in self._pool if mid not in exclude]
+        if not available:
+            return rng.choice(self._pool)
+        return rng.choice(available)
+
+    def random_start_movie(self, rng=None, max_attempts=50):
+        """A random movie that can actually start a run in this mode -- one
+        with at least one connection to another movie in the pool.
+
+        The pool filter creates dead ends the full dataset doesn't have: a
+        movie whose only connections are to movies below the sitelink floor
+        has zero playable connections (1.4% of easy's pool vs 0.4% of
+        regular's). Those can only ever be hit as a STARTING movie -- any
+        movie reached as a correct answer necessarily connects to the movie
+        it was reached from, which is in the pool by construction."""
+        rng = rng or random
+        for _ in range(max_attempts):
+            mid = self.random_movie(rng)
+            if self.connected_ids(mid):
                 return mid
+        return self.random_movie(rng)
 
     def connections_between(self, a, b):
         """{conn_type: [shared values]} for every connection type that ties
@@ -136,17 +225,35 @@ class MovieLadder:
         return matches
 
     def connected_ids(self, movie_id):
-        """Every other movie sharing at least one connection type/value with
-        movie_id -- the 'has a real connection, don't care which kind' set
-        the decoy logic needs. Built lazily per movie (not precomputed for
-        all 17k movies), since only the current movie's footprint matters
-        per round."""
+        """Every other movie IN THIS MODE'S POOL sharing at least one
+        connection type/value with movie_id -- the 'has a real connection,
+        don't care which kind' set the decoy logic needs. Built lazily per
+        movie (not precomputed for all 15k movies), since only the current
+        movie's footprint matters per round.
+
+        Pool-filtered here rather than at the call sites so no caller can
+        accidentally leak an out-of-pool movie into a round."""
         connected = set()
         for conn_type, values in self._movie_values.get(movie_id, {}).items():
             for value in values:
-                connected |= set(self.connections[conn_type][value])
+                connected |= self._pool_set & set(self.connections[conn_type][value])
         connected.discard(movie_id)
         return connected
+
+    def hint_type(self, matches, rng=None):
+        """Which connection type to name as an up-front hint, or None for no
+        hint (regular mode, or a round whose only matches would give the
+        answer away -- see NON_HINTABLE_TYPES). Prefers the rarest applicable
+        type; see HINT_PREFERENCE."""
+        if not self.config["hint"]:
+            return None
+        hintable = set(matches) - NON_HINTABLE_TYPES
+        if not hintable:
+            return None
+        for preferred in HINT_PREFERENCE:
+            if preferred in hintable:
+                return preferred
+        return sorted(hintable)[0]
 
     def build_round(self, movie_id, rng=None, exclude=None, max_attempts=200):
         """Build a 3-candidate round for the movie on top of the stack:
@@ -178,7 +285,8 @@ class MovieLadder:
 
         matches = self.connections_between(movie_id, correct_id)
 
-        return Round(current_id=movie_id, candidates=candidates, correct_id=correct_id, matches=matches)
+        return Round(current_id=movie_id, candidates=candidates, correct_id=correct_id,
+                     matches=matches, hint_type=self.hint_type(matches, rng))
 
     def build_chain(self, length, start_movie_id=None, rng=None, max_attempts=500):
         """Convenience: build an open-ended chain of `length` movies,
@@ -189,7 +297,8 @@ class MovieLadder:
         (movie_id, matches_used_to_reach_it) tuples; the first entry has
         matches=None since there's no prior connection."""
         rng = rng or random
-        chain = [(start_movie_id if start_movie_id is not None else self.random_movie(rng), None)]
+        start = start_movie_id if start_movie_id is not None else self.random_start_movie(rng)
+        chain = [(start, None)]
         seen = {chain[0][0]}
 
         attempts = 0
@@ -202,7 +311,7 @@ class MovieLadder:
                     chain.pop()
                     continue
                 else:
-                    chain[0] = (self.random_movie(rng), None)
+                    chain[0] = (self.random_start_movie(rng), None)
                     seen = {chain[0][0]}
                     continue
             chain.append((round_.correct_id, round_.matches))
@@ -211,17 +320,19 @@ class MovieLadder:
         return chain
 
 
-def _demo(path, n):
-    game = MovieLadder(path)
-    print(f"Loaded {len(game.movies)} movies\n")
+def _demo(path, n, mode):
+    game = MovieLadder(path, mode=mode)
+    print(f"Loaded {len(game.movies)} movies; mode={mode}, "
+          f"playable pool={game.pool_size}, "
+          f"types={sorted(game.config['connection_types'])}\n")
     chain = game.build_chain(n)
     for i, (movie_id, matches) in enumerate(chain):
         m = game.movie(movie_id)
         if matches:
             match_str = "; ".join(f"{k}: {', '.join(v)}" for k, v in matches.items())
-            print(f"  --[{match_str}]-->  {m['title']} ({m['year']})")
+            print(f"  --[{match_str}]-->  {m['title']} ({m['year']}) [{m['sitelinks']} sitelinks]")
         else:
-            print(f"{m['title']} ({m['year']})")
+            print(f"{m['title']} ({m['year']}) [{m['sitelinks']} sitelinks]")
 
 
 if __name__ == "__main__":
@@ -229,8 +340,10 @@ if __name__ == "__main__":
     ap.add_argument("connections_path")
     ap.add_argument("--demo", type=int, default=5, metavar="N",
                      help="Print a demo chain of N movies")
+    ap.add_argument("--mode", choices=sorted(MODE_CONFIG), default="regular",
+                     help="Difficulty mode to build the chain under (see MODE_CONFIG)")
     ap.add_argument("--seed", type=int, default=None)
     args = ap.parse_args()
     if args.seed is not None:
         random.seed(args.seed)
-    _demo(args.connections_path, args.demo)
+    _demo(args.connections_path, args.demo, args.mode)

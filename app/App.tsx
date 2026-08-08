@@ -3,11 +3,19 @@ import { StatusBar } from 'expo-status-bar';
 import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import connectionsData from './assets/data/connections.json';
-import { MovieLadder, Round } from './src/movieLadder';
+import {
+  isMode,
+  Mode,
+  MODE_CONFIG,
+  MODES,
+  ModeEngine,
+  MovieLadder,
+  Round,
+} from './src/movieLadder';
 import TutorialScreen from './src/TutorialScreen';
 import MovieCell from './src/components/MovieCell';
 import LadderStack, { MAX_BOARD_WIDTH, MAX_STACK_TILES } from './src/components/LadderStack';
-import { formatMatches } from './src/tutorial';
+import { formatMatches, roundPrompt } from './src/tutorial';
 import { colors } from './src/theme';
 import { fetchTopScores, LeaderboardEntry, submitScore, wouldQualify } from './src/leaderboard';
 
@@ -68,11 +76,20 @@ interface PendingResult {
 // means the current run survives a reload/tab close, not an explicit save
 // slot -- every state change re-persists the whole snapshot, and starting a
 // new run (restart()) naturally overwrites it with the fresh state.
-const SAVE_KEY = 'movie-ladder:save-v1';
-const SAVE_VERSION = 1;
+// Bumped v1 -> v2 when difficulty modes landed (2026-08-08): a v1 save has
+// no `mode`, and defaulting it either way would silently resume a run under
+// rules it wasn't played by (easy's restricted pool/type list vs regular's).
+// The version check below already discards cleanly, so a bump is the whole
+// fix -- one abandoned in-flight run per player, once.
+const SAVE_KEY = 'movie-ladder:save-v2';
+const SAVE_VERSION = 2;
 
 interface SavedGame {
   version: number;
+  /** Which difficulty mode this run is being played under. A run never
+   * changes mode mid-flight -- switching modes goes through the mode-select
+   * screen, which starts a fresh run. */
+  mode: Mode;
   stack: number[];
   history: number[];
   score: number;
@@ -141,6 +158,11 @@ function loadSavedGame(game: MovieLadder): SavedGame | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as SavedGame;
     if (parsed.version !== SAVE_VERSION) return null;
+    // A save whose mode isn't one this build knows about (hand-edited
+    // storage, or a mode removed in a later version) is discarded rather
+    // than coerced to a default -- resuming under the wrong ruleset is
+    // exactly what the version bump above exists to prevent.
+    if (!isMode(parsed.mode)) return null;
     if (!Array.isArray(parsed.stack) || parsed.stack.length === 0) return null;
     for (const [idStr, title] of Object.entries(parsed.titleCheck ?? {})) {
       const id = Number(idStr);
@@ -165,25 +187,114 @@ function saveGame(game: MovieLadder, snapshot: Omit<SavedGame, 'version' | 'titl
 
 export default function App() {
   const game = useMemo(() => new MovieLadder(connectionsData as any), []);
-  const [savedGame] = useState<SavedGame | null>(() => loadSavedGame(game));
+  const [savedGame, setSavedGame] = useState<SavedGame | null>(() => loadSavedGame(game));
+  // Mode has to be chosen before anything else renders, because the tutorial
+  // teaches mode-specific rules and the engine builds mode-specific rounds.
+  // A resumed run keeps the mode it was saved under; otherwise null until
+  // the player picks, which is what shows the selector.
+  const [mode, setMode] = useState<Mode | null>(() => savedGame?.mode ?? null);
   // Skip the tutorial on reload if there's a run to resume -- a returning
   // player doesn't need the walkthrough again just because they refreshed.
   const [showTutorial, setShowTutorial] = useState(() => savedGame === null);
 
+  // Returning to the mode selector abandons the in-flight run (a run can't
+  // change mode mid-flight -- see SavedGame.mode), so the stale save is
+  // dropped here rather than left to be resumed under the newly chosen mode.
+  function changeMode() {
+    try {
+      localStorage.removeItem(SAVE_KEY);
+    } catch {
+      // Storage unavailable -- nothing to clear, the run just wasn't saved.
+    }
+    setSavedGame(null);
+    setMode(null);
+  }
+
+  function chooseMode(chosen: Mode) {
+    setMode(chosen);
+    // A player arriving at the selector with no saved run is new (or just
+    // reset), so they get the tutorial for the mode they picked.
+    setShowTutorial(savedGame === null);
+  }
+
   return (
     <View style={styles.app}>
       <StatusBar style="light" />
-      {showTutorial ? (
-        <TutorialScreen game={game} onDone={() => setShowTutorial(false)} />
+      {mode === null ? (
+        <ModeSelectScreen game={game} onChoose={chooseMode} />
+      ) : showTutorial ? (
+        <TutorialScreen game={game} mode={mode} onDone={() => setShowTutorial(false)} />
       ) : (
-        <GameScreen game={game} savedGame={savedGame} />
+        <GameScreen
+          key={mode}
+          game={game}
+          mode={mode}
+          savedGame={savedGame}
+          onChangeMode={changeMode}
+        />
       )}
     </View>
   );
 }
 
-function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGame | null }) {
-  const [stack, setStack] = useState<number[]>(() => savedGame?.stack ?? [game.randomMovie()]);
+/**
+ * Mode picker, shown before the tutorial so the walkthrough can teach the
+ * rules the player actually chose. Each mode's pool size is read off the
+ * live engine rather than hardcoded, so the numbers can't drift from the
+ * shipped dataset the way a written-in figure would after a regeneration.
+ */
+function ModeSelectScreen({
+  game,
+  onChoose,
+}: {
+  game: MovieLadder;
+  onChoose: (mode: Mode) => void;
+}) {
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerText}>MOVIE LADDER</Text>
+      </View>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <Text style={styles.modeSelectTitle}>CHOOSE A DIFFICULTY</Text>
+        {MODES.map((m) => {
+          const config = MODE_CONFIG[m];
+          const poolSize = game.forMode(m).poolSize;
+          return (
+            <Pressable key={m} style={styles.modeCard} onPress={() => onChoose(m)}>
+              <Text style={styles.modeCardTitle}>{config.label}</Text>
+              <Text style={styles.modeCardBlurb}>{config.blurb}</Text>
+              <Text style={styles.modeCardMeta}>
+                {poolSize.toLocaleString()} movies · {config.connectionTypes.size} connection types
+              </Text>
+            </Pressable>
+          );
+        })}
+        <Text style={styles.modeSelectFootnote}>
+          Each mode keeps its own high-score board, since the two aren’t comparable.
+        </Text>
+      </ScrollView>
+    </View>
+  );
+}
+
+function GameScreen({
+  game,
+  mode,
+  savedGame,
+  onChangeMode,
+}: {
+  game: MovieLadder;
+  mode: Mode;
+  savedGame: SavedGame | null;
+  onChangeMode: () => void;
+}) {
+  // Every round-building call goes through the mode's engine, never the raw
+  // dataset -- that's what applies the pool filter and the reduced
+  // connection-type list. `game` is still used directly for movie lookups,
+  // which are mode-independent.
+  const engine = useMemo(() => game.forMode(mode), [game, mode]);
+  const [stack, setStack] = useState<number[]>(() => savedGame?.stack ?? [engine.randomStartMovie()]);
   const currentId = stack[stack.length - 1];
   // Every movie placed on the ladder this run, across every floor -- never
   // reset by a milestone clear (only by restart()). Passed as buildRound's
@@ -192,7 +303,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   // own current movie, and B's real connections legitimately include A.
   const [history, setHistory] = useState<Set<number>>(() => new Set(savedGame?.history ?? stack));
   const [round, setRound] = useState<Round | null>(() =>
-    savedGame ? savedGame.round : game.buildRound(currentId, history)
+    savedGame ? savedGame.round : engine.buildRound(currentId, history)
   );
   // Set the instant a candidate is tapped, cleared once the player dismisses
   // the result modal -- every pick gets this, right or wrong, per the "more
@@ -270,7 +381,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   useEffect(() => {
     if (!gameOver || scoreSubmitted) return;
     let cancelled = false;
-    wouldQualify(score).then((qualifies) => {
+    wouldQualify(score, mode).then((qualifies) => {
       if (!cancelled) setScoreQualifies(qualifies);
     });
     return () => {
@@ -284,6 +395,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   // blindly).
   useEffect(() => {
     saveGame(game, {
+      mode,
       stack,
       history: [...history],
       score,
@@ -305,6 +417,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
     });
   }, [
     game,
+    mode,
     stack,
     history,
     score,
@@ -328,7 +441,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   function openLeaderboard() {
     setShowLeaderboard(true);
     setLeaderboardEntries(null);
-    fetchTopScores().then(setLeaderboardEntries);
+    fetchTopScores(mode).then(setLeaderboardEntries);
   }
 
   // Ends the run early, same underlying "run over" state a strikeout
@@ -360,7 +473,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   async function handleSubmitScore() {
     if (initials.length === 0 || submittingScore) return;
     setSubmittingScore(true);
-    await submitScore(initials, score);
+    await submitScore(initials, score, mode);
     setSubmittingScore(false);
     setScoreSubmitted(true);
   }
@@ -455,7 +568,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       setRound(null);
       setMilestone(true);
     } else {
-      setRound(game.buildRound(correctId, newHistory));
+      setRound(engine.buildRound(correctId, newHistory));
     }
   }
 
@@ -482,7 +595,7 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       } else if (offerBet) {
         setBetBlocked(true);
       } else {
-        setRound(game.buildRound(topId, history));
+        setRound(engine.buildRound(topId, history));
       }
     });
   }
@@ -490,20 +603,20 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
   function resolveBetOffer(accepted: boolean) {
     setBetOffer(false);
     setIsBetFloor(accepted);
-    setRound(game.buildRound(stack[stack.length - 1], history));
+    setRound(engine.buildRound(stack[stack.length - 1], history));
   }
 
   function continueAfterBetBlocked() {
     setBetBlocked(false);
-    setRound(game.buildRound(stack[stack.length - 1], history));
+    setRound(engine.buildRound(stack[stack.length - 1], history));
   }
 
   function restart() {
-    const startId = game.randomMovie();
+    const startId = engine.randomStartMovie();
     const startHistory = new Set([startId]);
     setStack([startId]);
     setHistory(startHistory);
-    setRound(game.buildRound(startId, startHistory));
+    setRound(engine.buildRound(startId, startHistory));
     setPendingResult(null);
     setMilestone(false);
     setScore(0);
@@ -552,6 +665,10 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
 
       <View style={styles.statusBar}>
         <Text style={styles.statusText}>SCORE: {score}</Text>
+        {/* Always-visible mode badge: the two modes differ enough (pool,
+            connection types, hints) that "which mode am I in" has to be
+            answerable at a glance, not only from the leaderboard. */}
+        <Text style={styles.statusTextMode}>{MODE_CONFIG[mode].label}</Text>
         <Text style={[styles.statusText, strikes > 0 && styles.statusTextDanger]}>
           STRIKES: {strikes}/{MAX_STRIKES}
         </Text>
@@ -563,9 +680,17 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
         {gameOver ? (
           <View style={styles.milestoneBanner}>
             <Text style={[styles.milestoneText, { color: colors.red }]}>RUN OVER</Text>
-            <Text style={styles.milestoneScore}>Final score: {score}</Text>
+            <Text style={styles.milestoneScore}>
+              Final score: {score} ({MODE_CONFIG[mode].label})
+            </Text>
             <Pressable style={styles.button} onPress={restart}>
               <Text style={styles.buttonText}>PLAY AGAIN ▶</Text>
+            </Pressable>
+            {/* Switching difficulty is only offered between runs -- a run
+                can't change mode mid-flight (see SavedGame.mode), and the
+                run-over screen is the natural place to reconsider. */}
+            <Pressable style={styles.buttonSecondaryFull} onPress={onChangeMode}>
+              <Text style={styles.buttonSecondaryText}>CHANGE DIFFICULTY</Text>
             </Pressable>
           </View>
         ) : milestone ? (
@@ -620,7 +745,12 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
                 💰 BET FLOOR — ZERO STRIKES DOUBLES THIS FLOOR’S COMPLETION BONUS
               </Text>
             )}
-            <Text style={styles.label}>WHICH MOVIE CONNECTS TO THE TOP TILE?</Text>
+            {/* In easy mode this names the connection category to look for
+                (option 4 of CLAUDE.md section 5c); in regular it's the
+                original open-ended prompt. Reads round.hintType rather than
+                recomputing, so the hint is stable across re-renders and
+                survives a save/reload with the round it belongs to. */}
+            <Text style={styles.label}>{roundPrompt(round?.hintType ?? null)}</Text>
 
             {round ? (
               <View style={styles.candidatesRow}>
@@ -655,7 +785,12 @@ function GameScreen({ game, savedGame }: { game: MovieLadder; savedGame: SavedGa
       )}
 
       {showChain && (
-        <ConnectionChainModal game={game} history={history} onClose={() => setShowChain(false)} />
+        <ConnectionChainModal
+          game={game}
+          engine={engine}
+          history={history}
+          onClose={() => setShowChain(false)}
+        />
       )}
 
       {gameOver && scoreQualifies && !scoreSubmitted && !showQuitModal && (
@@ -727,10 +862,16 @@ function LeaderboardModal({
 
 function ConnectionChainModal({
   game,
+  engine,
   history,
   onClose,
 }: {
   game: MovieLadder;
+  // Mode-scoped, so the chain explains each link using the same connection
+  // types the run was actually played under -- in easy mode, listing a
+  // screenwriter link the mode never counted would misreport why those two
+  // movies connected.
+  engine: ModeEngine;
   history: Set<number>;
   onClose: () => void;
 }) {
@@ -749,7 +890,8 @@ function ConnectionChainModal({
             {chain.map((id, i) => {
               const movie = game.movie(id);
               const nextId = chain[i + 1];
-              const matchLines = nextId !== undefined ? formatMatches(game.connectionsBetween(id, nextId)) : [];
+              const matchLines =
+                nextId !== undefined ? formatMatches(engine.connectionsBetween(id, nextId)) : [];
               return (
                 <View key={`${id}-${i}`}>
                   <View style={styles.chainRow}>
@@ -1028,6 +1170,59 @@ const styles = StyleSheet.create({
   },
   statusTextDanger: {
     color: colors.red,
+  },
+  statusTextMode: {
+    color: colors.textSecondary,
+    fontWeight: '800',
+    fontSize: 11,
+    letterSpacing: 1.2,
+  },
+  // --- mode select ---
+  modeSelectTitle: {
+    color: colors.textPrimary,
+    fontWeight: '800',
+    fontSize: 15,
+    letterSpacing: 1.5,
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  modeCard: {
+    backgroundColor: colors.headerBackground,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.cellBorder,
+    padding: 18,
+    marginBottom: 14,
+    maxWidth: MAX_BOARD_WIDTH,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  modeCardTitle: {
+    color: colors.pink,
+    fontWeight: '800',
+    fontSize: 20,
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  modeCardBlurb: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  modeCardMeta: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  modeSelectFootnote: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 4,
+    maxWidth: MAX_BOARD_WIDTH,
+    alignSelf: 'center',
   },
   scrollView: { flex: 1 },
   scrollContent: { paddingBottom: 32 },

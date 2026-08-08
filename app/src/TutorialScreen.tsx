@@ -1,26 +1,31 @@
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { MovieLadder } from './movieLadder';
+import { Mode, MODE_CONFIG, MovieLadder, pickHintType } from './movieLadder';
 import { colors } from './theme';
 import MovieCell from './components/MovieCell';
 import LadderStack, { MAX_BOARD_WIDTH } from './components/LadderStack';
 import {
+  buildCopy,
   buildTutorialScript,
-  COPY,
   formatMatches,
   Phase,
   PHASE_ORDER,
+  roundPrompt,
 } from './tutorial';
 
 export default function TutorialScreen({
   game,
+  mode,
   onDone,
 }: {
   game: MovieLadder;
+  mode: Mode;
   onDone: () => void;
 }) {
-  const script = useMemo(() => buildTutorialScript(game), [game]);
+  const engine = useMemo(() => game.forMode(mode), [game, mode]);
+  const script = useMemo(() => buildTutorialScript(game, engine), [game, engine]);
+  const COPY = useMemo(() => buildCopy(mode), [mode]);
   const [phaseIndex, setPhaseIndex] = useState(0);
   const phase: Phase = PHASE_ORDER[phaseIndex];
 
@@ -47,7 +52,7 @@ export default function TutorialScreen({
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <View style={styles.board}>
-          <Board phase={phase} script={script} game={game} />
+          <Board phase={phase} script={script} game={game} mode={mode} />
         </View>
         {(phase === 'intro' ||
           phase === 'pick-correct' ||
@@ -118,14 +123,28 @@ export default function TutorialScreen({
   );
 }
 
+/**
+ * Uses the real engine's hint rule rather than reimplementing it, so the
+ * tutorial can't teach a hint the game wouldn't actually show. Safe to call
+ * directly because pickHintType is deterministic (it prefers the rarest
+ * applicable type rather than choosing at random), so the walkthrough reads
+ * identically every time.
+ */
+function tutorialHint(mode: Mode, matches: Record<string, string[]>): string | null {
+  if (!MODE_CONFIG[mode].hint) return null;
+  return pickHintType(matches);
+}
+
 function Board({
   phase,
   script,
   game,
+  mode,
 }: {
   phase: Phase;
   script: ReturnType<typeof buildTutorialScript>;
   game: MovieLadder;
+  mode: Mode;
 }) {
   const m = (id: number) => game.movie(id);
   const asStack = (ids: number[]) =>
@@ -133,6 +152,12 @@ function Board({
       const movie = m(id);
       return { title: movie.title, year: movie.year };
     });
+  // Mirrors the real game's prompt above the candidates (App.tsx), so the
+  // tutorial teaches the actual play surface -- including easy mode's
+  // category hint, which would otherwise show up unexplained in a real run.
+  const prompt = (matches: Record<string, string[]>) => (
+    <Text style={styles.prompt}>{roundPrompt(tutorialHint(mode, matches))}</Text>
+  );
 
   // Every phase shows the same board the real game uses, so the tutorial
   // teaches the actual play surface rather than a stand-in diagram. Only
@@ -146,6 +171,7 @@ function Board({
     return (
       <>
         <LadderStack movies={asStack([script.pulpFiction])} />
+        {prompt(script.correctRound1)}
         <View style={styles.candidates}>
           {[
             { id: script.killBill1, highlight: true },
@@ -174,6 +200,7 @@ function Board({
         {/* Kill Bill Vol. 1 was placed by the previous correct pick, so it's
             now the top tile and Pulp Fiction sits below it. */}
         <LadderStack movies={asStack([script.pulpFiction, script.killBill1])} />
+        {prompt(script.correctRound2)}
         <View style={styles.candidates}>
           {[
             { id: script.killBill2, highlight: false },
@@ -222,6 +249,7 @@ function Board({
         <Text style={styles.betRoundBanner}>
           💰 BET FLOOR — ZERO STRIKES DOUBLES THIS FLOOR’S COMPLETION BONUS
         </Text>
+        {prompt(script.betRound)}
         <View style={styles.candidates}>
           {[
             { id: script.jackieBrown, highlight: true },
@@ -360,6 +388,16 @@ const styles = StyleSheet.create({
   // pins the first and last tile's outer edges to the board's edges.
   // Matches App.tsx's real candidatesRow/candidateSlot.
   candidateSlot: { width: '30%' },
+  // Matches App.tsx's own `label` style so the tutorial's prompt line and
+  // the real game's look identical.
+  prompt: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    marginTop: 16,
+  },
   betRoundBanner: {
     color: colors.yellow,
     fontWeight: '800',

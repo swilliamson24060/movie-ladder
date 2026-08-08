@@ -61,9 +61,24 @@ framing since this is an open-ended run, not a bounded path). Copy:
 
 > Every ladder starts with one movie already on the board. Your job: keep
 > picking movies that connect to the one on top, for as long as you can.
-> Connections come straight from the data — shared director, cast member,
-> award, and more. You don't need to know *which* connection it is, just
-> that one exists.
+>
+> Connections come from:
+> • Same director
+> • Shared cast member
+> • Same screenwriter
+> • Same composer
+> • Same award (Academy Awards, AFI, BAFTA, Cannes, Golden Globe, Golden
+>   Raspberry, Palme d'Or, Screen Actors Guild, Sundance, or Writers Guild
+>   of America)
+> • Same franchise/series
+>
+> You don't need to know which one applies — just that one exists.
+>
+> Movies range from 1950 to 2026.
+
+That's regular mode's list. **Easy mode's intro lists only its three types
+(director, cast, franchise) and explains the category hint instead** — see
+"Difficulty modes changed this script" at the end of this doc.
 
 Button: "NEXT ▶"
 
@@ -81,12 +96,14 @@ pattern as chart-ladder's scripted `handleConfirmTile`)
 
 **explain-correct** — modal, no minimum delay. Copy:
 
-> **Correct!** Kill Bill: Volume 1 connects to Pulp Fiction in two ways:
+> **Correct!** Kill Bill: Volume 1 connects to Pulp Fiction by:
 > - Same director — Quentin Tarantino
 > - Same cast member — Uma Thurman
+> *(regular mode also shows: Same screenwriter — Quentin Tarantino)*
 >
-> +1 point. All matching connections are always shown, even when there's
-> more than one — you don't have to guess which one "counts."
+> +5 points, this floor's per-tile value. All matching connections are
+> always shown, even when there's more than one — you don't have to guess
+> which one "counts."
 
 Button: "NEXT ▶"
 
@@ -120,14 +137,18 @@ Button: "CONTINUE ▶"
 scrolling off-screen, leaving only the top tile. Copy:
 
 > Land 5 correct movies in a row without a strike and the stack clears off
-> the board, leaving just the top tile to keep building from — like the
-> last one you placed. Every group of 5 also pays a bonus:
-> - +1 point per correct movie (as you just saw)
-> - **+5 points** for completing a group of 5
-> - **+10 points more** if that group of 5 had zero strikes
+> the board, leaving just the top tile to keep building from. Scoring
+> climbs every floor:
+> - Floor 1 pays 5 points per correct movie, Floor 2 pays 10, Floor 3 pays
+>   15 — 5 more per tile each floor (as you just saw)
+> - Completing a floor pays a bonus too: 2 points per correct answer that
+>   floor, doubling to 4 on Floor 2, 6 on Floor 3 — 2 more per correct
+>   answer each floor. A miss doesn't earn its share, even though the
+>   correct movie still gets placed for you.
+> - Zero strikes on a floor adds +10 more on top of that floor's bonus
 >
-> A strike anywhere in the group still lets you finish it — you just miss
-> out on that +10.
+> A strike anywhere in the floor still lets you finish it — you just miss
+> out on the strike's own bonus share and the +10.
 
 Button: "NEXT ▶"
 
@@ -147,24 +168,26 @@ tutorial's own panel button below drives advancement, same pattern as
 every other scripted phase, so the demo doesn't need real branching for a
 decline path. Copy:
 
-> A bet stakes one of your strikes on your very next pick:
-> - **Win** → a big bonus payout on top of normal scoring
-> - **Lose** → that miss costs you 2 strikes instead of 1
+> A bet stakes your entire next floor:
+> - **Win** → finish that floor with zero strikes and its completion bonus
+>   doubles
+> - **Lose** → miss even once and the bet's off — strikes still cost their
+>   normal amount either way
 >
 > Let's take the bet.
 
 Button: "TAKE THE BET ▶"
 
 **betting-round** — Board shows the same 3-tile stack, a
-"💰 BET ROUND — WIN: +10 PTS · LOSE: −2 STRIKES" banner, and 3 gold-bordered
-candidates continuing the Tarantino chain past Kill Bill Vol. 2: **Jackie
-Brown (1997)** (correct, highlighted blue on top of the gold bet-round
-marking), **Titanic (1997)**, **The Sound of Music (1965)** (both decoys,
-zero connection to Kill Bill Vol. 2 — see the verified-connections table
-below). Copy:
+"💰 BET FLOOR — ZERO STRIKES DOUBLES THIS FLOOR'S COMPLETION BONUS" banner,
+and 3 gold-bordered candidates continuing the Tarantino chain past Kill
+Bill Vol. 2: **Jackie Brown (1997)** (correct, highlighted blue on top of
+the gold bet marking), **Titanic (1997)**, **The Sound of Music (1965)**
+(both decoys, zero connection to Kill Bill Vol. 2 — see the
+verified-connections table below). Copy:
 
-> Bet rounds are marked gold so the raised stakes are never a surprise.
-> Here, Jackie Brown (highlighted) is the right pick.
+> Every pick in a bet floor is marked gold, so the raised stakes are never
+> a surprise. Here, Jackie Brown (highlighted) is the right pick.
 
 Button: "SEE WHAT HAPPENS ▶"
 
@@ -174,10 +197,17 @@ Copy:
 > **Correct!** Jackie Brown connects to Kill Bill: Volume 2 by:
 > - Same director — Quentin Tarantino
 > - Same cast member — Michael Bowen, Quentin Tarantino, Samuel L. Jackson
-> - Same screenwriter — Quentin Tarantino
+> *(regular mode also shows: Same screenwriter — Quentin Tarantino)*
 >
-> +10 points — bet won! Betting pays off big when you're confident.
-> Remember: losing a bet costs 2 strikes instead of 1.
+> +5 points, same as any correct pick. A real bet pays off separately, at
+> the end of the floor: finish the whole floor with zero strikes and its
+> completion bonus doubles. Miss even once and the bet's off, though
+> strikes still cost their normal amount either way.
+
+Note the modal deliberately does **not** claim this single pick "won" the
+bet — winning now requires completing a whole floor, and the tutorial only
+demos one pick, so the copy explains the mechanic rather than asserting the
+demo fulfilled it.
 
 Button: "NEXT ▶"
 
@@ -263,3 +293,29 @@ on director + cast alone, and the decoys were already genre-clean anyway,
 so nothing needed re-verifying. Also documented in `CLAUDE.md` section 6
 and `README.md`. Doesn't affect music/chart-ladder — `same_song_genre` is
 shipped there and hasn't shown this problem.
+
+## Difficulty modes changed this script (2026-08-08)
+
+The tutorial is now mode-aware (CLAUDE.md section 5c). What changed:
+
+- **The intro's connection-type list is per mode.** Easy lists three types
+  (director, cast, franchise) and explains the category hint; regular keeps
+  the six-type list this document originally described.
+- **The explain modals use the mode's own connection types.** All three
+  scripted pairs also share a screenwriter, which easy mode doesn't count —
+  showing it would teach a rule that mode ignores. Verified every scripted
+  pair still connects under easy's reduced list (Pulp Fiction → Kill Bill
+  Vol. 1 on director + cast; Vol. 1 → Vol. 2 on director + cast + series;
+  Vol. 2 → Jackie Brown on director + cast), that all ten scripted movies
+  clear easy's ≥30 sitelink floor, and that the decoy pairs — already
+  zero-connection across all six types — remain so under three.
+- **The candidate rows now show the real round prompt**, which in easy mode
+  names the connection category ("WHICH MOVIE SHARES A DIRECTOR WITH THE
+  TOP TILE?"). Without this the tutorial would never mention a UI element
+  the player meets in their first real round. The tutorial calls the
+  engine's own `pickHintType`, so it can't teach a hint the game wouldn't
+  actually show.
+
+Everything else in the script — phases, scoring copy, betting demo — is
+identical in both modes, because the modes deliberately change only which
+rounds get built, not the run's economy.

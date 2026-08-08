@@ -3,7 +3,7 @@
 Working notes for two related connection-chain games. Written to be read cold
 by a person or by Claude picking this up in a new session.
 
-Last updated: 2026-08-01
+Last updated: 2026-08-08
 
 ---
 
@@ -595,6 +595,236 @@ anything reused will need to be ported/duplicated, not imported.
 
 ---
 
+## 5c. Difficulty modes — Easy vs. Regular (built 2026-08-08)
+
+Goal: an Easy mode and a Regular mode. Three levers were chosen out of five
+options discussed. **All three plus the shared plumbing are now implemented**
+— see "What shipped" at the end of this section for the file-by-file
+summary and what's verified vs. still unverified.
+
+Easy = a pool restricted to well-known movies (≥30 sitelinks, 3,765 of
+15,674), only the three most recognizable connection types, and the
+connection category named up front. Regular = the whole pool, all six
+types, no hint. **The modes deliberately change only which rounds get
+built** — scoring, strikes, floors and betting are identical in both, so
+none of section 5b's economy needed touching.
+
+**Measurement that killed an obvious assumption, worth not re-deriving:**
+decoys are currently drawn uniformly at random from the whole pool
+(`randomMovie(decoyExclude)` in `movieLadder.ts`), which looks like it
+should let a player win by picking whichever of the 3 candidates they've
+heard of. Simulated 400 real rounds against the shipped data: the correct
+answer is the single most-recognizable of the three **34%** of the time vs.
+**33%** by chance. So that tell does **not** exist today. The reason this
+matters: it's easy to *introduce* it accidentally — e.g. by restricting
+only the correct answer to well-known films while leaving decoys uniform.
+Any recognizability filter must apply to the whole round (current movie,
+correct answer, and both decoys) for exactly this reason.
+
+### Option 1 — recognizability filter on the movie pool (data side DONE)
+
+Restrict Easy mode's pool by Wikipedia sitelink count (`sitelinks`, carried
+through from `films.csv`, the same notability proxy `films_enrich.py`
+already uses for cast filtering). The shipped pool's median is 20, so
+roughly half of it is obscure enough that a typical player is guessing
+blind rather than reasoning — that's the thing Easy mode fixes.
+
+Feasibility, recomputed against the regenerated shipped file (2026-08-08).
+The concern was that filtering to well-known films would fragment the
+connection graph; it doesn't, dead-end rate is essentially flat:
+
+| Threshold | Pool | % of pool | Dead ends | Median degree |
+|---|---|---|---|---|
+| all (Regular) | 15,674 | 100% | 62 (0.4%) | 142 |
+| ≥ 20 | 8,039 | 51.3% | 32 (0.4%) | 136 |
+| ≥ 25 | 5,480 | 35.0% | 19 (0.3%) | 128 |
+| ≥ 30 | 3,765 | 24.0% | 12 (0.3%) | 115 |
+| ≥ 40 | 1,784 | 11.4% | 5 (0.3%) | 84 |
+
+**≥30 is the suggested Easy threshold** (3,765 movies, still a median of
+115 connections each) but the exact number isn't decided — the generator
+now prints this distribution at build time so it can be re-checked whenever
+the dataset is regenerated.
+
+**What shipped for this (2026-08-08):** `connections_generator.py` now
+carries `sitelinks` as a 5th per-movie field; `movie_fields` is
+`["title","year","wikidata_id","imdb_id","sitelinks"]`. Regenerated
+`data/connections.json(.gz)` and copied to `app/assets/data/
+connections.json` per the usual workflow. `movieLadder.ts`'s `MovieRow`
+tuple, `Movie` interface and `movie()` updated, plus a `sitelinks(id)`
+accessor. `round_selector.py` needed **no** change — it reads rows via
+`dict(zip(movie_fields, row))`, so it picked the new field up for free.
+
+**Critical property, verified rather than assumed:** the new field was
+appended *last*, so movie IDs (= array positions) are unchanged. Diffed the
+regenerated file against the previous one: 15,674 movies both before and
+after, **0** rows whose first four fields changed, and **0** connection
+groups changed anywhere — the only difference in the entire file is the
+appended column. This means **existing saved games stay valid** (they store
+movie IDs — see `App.tsx`'s `SAVE_KEY`, and the save-invalidation warning
+in section 9's save-game entry). Also verified all 15,674 sitelink values
+match `films.csv` exactly, with none missing or zero. File grew 2.48MB →
+2.53MB plain, 1.086MB → 1.109MB gzipped (+2%).
+
+**Runtime side, built 2026-08-08:** the filter lives in `ModeEngine`, which
+applies it in `connectedIds()` (so the correct answer is always in-pool) and
+in `randomMovie()` (so decoys are too) — i.e. the whole round, per the
+warning above, not just the correct answer.
+
+**New failure mode the filter introduces, and its fix:** restricting the
+pool creates dead ends that don't exist in the full dataset — a movie whose
+only connections are to movies below the floor has zero *playable*
+connections (1.4% of easy's pool vs 0.4% of regular's). These can only ever
+be hit as a **starting** movie: any movie reached as a correct answer
+necessarily connects to the movie it came from, which is in-pool by
+construction. So the fix is scoped to starts — `randomStartMovie()` retries
+until it finds a movie with at least one in-pool connection. Verified over
+800 rounds per mode: zero dead-end restarts in either.
+
+### Option 2 — connection-type tiering (built 2026-08-08)
+
+Easy counts only "loud" connection types, Regular keeps all six. Per-type
+reach in the shipped data, which shows Easy stays rich on the loud ones:
+
+| Type | Movies with ≥1 usable link | Groups |
+|---|---|---|
+| `shared_cast_member` | 15,077 (96.2%) | 13,109 |
+| `same_director` | 12,959 (82.7%) | 2,737 |
+| `same_composer` | 12,224 (78.0%) | 1,523 |
+| `same_screenwriter` | 11,752 (75.0%) | 3,909 |
+| `same_series` | 1,321 (8.4%) | 352 |
+| `same_award` | 1,157 (7.4%) | 129 |
+
+Easy set as built: `same_series`, `same_director`, `shared_cast_member` —
+the ones a player can plausibly know. Regular keeps all six, including
+`same_composer`/`same_screenwriter`, which are much harder to spot.
+**Don't** try to build a mode on `same_award`/`same_series` alone: at
+7–8% reach they're far too thin to chain on. `ACTIVE_CONNECTION_TYPES` is
+now per-mode (`MODE_CONFIG`), and it **must stay mirrored** between
+`movieLadder.ts` and `round_selector.py` — they're deliberately duplicated,
+not imported, so a divergence would silently change what the game counts as
+"connected" in one implementation but not the other.
+
+### Option 4 — reveal the connection category as a hint (built 2026-08-08)
+
+Easy mode names the category up front — the round prompt becomes "WHICH
+MOVIE SHARES A DIRECTOR WITH THE TOP TILE?" instead of the open-ended
+"WHICH MOVIE CONNECTS TO THE TOP TILE?". The chosen type is stored on the
+`Round` (`hintType`) rather than derived at render time, so it's stable
+across re-renders and survives a save/reload with the round it belongs to.
+
+The `same_series` wrinkle was handled by suppression: it's in
+`NON_HINTABLE_TYPES`, so a round whose *only* match is a franchise link
+shows the normal no-hint prompt rather than a hint that gives it away.
+Measured frequency: 2–3 rounds in 800.
+
+**Finding worth keeping — this hint is weaker than the idea suggests.**
+Choosing at random among applicable types made the hint read "a cast
+member" in **93%** of easy rounds (measured over 800), because nearly every
+pair that connects at all connects on cast. So it rarely narrowed anything.
+Mitigated by `HINT_PREFERENCE`: when several types apply, name the *rarest*
+(ordered by measured reach — award 7.4%, screenwriter 75%, composer 78%,
+director 82.7%, cast 96.2%), which surfaces the ~7% of rounds that have a
+director link as "a director" instead of a coin flip. That raised director
+hints from 27 to 39 per 600 rounds — a real improvement but not a
+transformation. **The bulk of easy mode's difficulty reduction comes from
+options 1 and 2, not from this.** If the hint needs to matter more, the
+lever is biasing *round construction* toward rarer connection types, not
+changing how the hint is picked — deliberately not done here, since it
+would make chains director-heavy and repetitive.
+
+A side benefit of preference-ordering: `pickHintType` is now deterministic,
+so `TutorialScreen` calls the real function instead of reimplementing the
+rule, and the tutorial can't teach a hint the game wouldn't show.
+
+### Shared plumbing (built 2026-08-08)
+
+- **Leaderboard separation — one collection per mode**, not a `mode` field.
+  `highscores` stays regular's (so scores submitted before modes existed
+  remain on the board they were played under, zero migration);
+  `highscores_easy` is new. Chosen over a `mode` field for two concrete
+  reasons: a field would need a composite index
+  (`where('mode','==',x)` + `orderBy('score')`) created by hand in the
+  Firebase console before the leaderboard worked at all, and every existing
+  document lacks the field, so a filtered query would silently drop the
+  entire existing board. `firestore.rules` now covers both collections via
+  a shared `validScore()` function.
+- **Save-game compatibility.** `SavedGame` gained `mode`; `SAVE_KEY`/
+  `SAVE_VERSION` bumped `v1` → `v2`. A v1 save has no mode and defaulting
+  it either way would resume a run under rules it wasn't played by, so the
+  existing version-mismatch discard is the intended outcome (costs each
+  player one in-flight run, once). `loadSavedGame` also discards a save
+  whose `mode` isn't recognized rather than coercing it.
+- **Tutorial copy.** The intro's connection-type list and the
+  `pick-correct` copy are per-mode (`buildCopy(mode)`); easy's version
+  lists three types and explains the hint. `buildTutorialScript` now takes
+  the mode engine, so the explain modals only ever show connections that
+  mode actually counts — otherwise easy's tutorial would have taught a
+  screenwriter link the mode ignores (all three scripted pairs match on
+  screenwriter). Verified the scripted chain survives both modes: every
+  pair still connects under easy's reduced type list, all 10 scripted
+  movies clear the ≥30 floor, and the decoys were zero-connection under all
+  six types so they remain so under three. The tutorial now also renders
+  the real round prompt above its candidate rows, so easy's hint is taught
+  rather than appearing unexplained in a real run.
+- **Mode selector.** New first screen (`ModeSelectScreen`), shown before
+  the tutorial so the walkthrough teaches the rules actually chosen. Pool
+  sizes on the cards are read from the live engine, not hardcoded, so they
+  can't drift after a dataset regeneration. A `CHANGE DIFFICULTY` button on
+  the RUN OVER banner returns to it (and clears the save — a run can't
+  change mode mid-flight). The mode is also shown in the status bar at all
+  times.
+
+### What shipped, and what's verified
+
+Files: `app/src/movieLadder.ts` (mode config + `ModeEngine`),
+`app/App.tsx` (selector, plumbing, save v2, hint prompt, mode badge),
+`app/src/tutorial.ts` + `TutorialScreen.tsx` (mode-aware copy, hint
+prompt), `app/src/leaderboard.ts` + `firestore.rules` (per-mode boards),
+`scripts/round_selector.py` (mirrored config, `--mode` flag).
+
+**Verified:** `tsc --noEmit` clean (except one pre-existing unrelated error
+in `LadderStack.tsx`, `StyleSheet.absoluteFillObject`, present in HEAD);
+`expo export --platform web` bundles successfully; and the **shipped TS
+engine** driven headlessly for 800 rounds per mode asserting every
+invariant — whole round inside the pool, correct answer connected, both
+decoys connected by nothing, no repeats within a run, only the mode's own
+types ever reported, hint always among the matches and never
+`same_series`, regular never hinting. Zero failures in either mode. The
+Python mirror was verified the same way and agrees.
+
+**UI verified in-browser 2026-08-08** (via Claude-in-Chrome against a local
+`npm run web` — the Cowork sandbox itself has no browser, the proxy
+allowlist blocks Chromium downloads, so the dev server has to run on the
+user's machine). Checked end to end, zero console errors:
+- Mode-select screen renders both cards with pool sizes read live from the
+  engine (3,765 / 15,674) — not hardcoded.
+- Easy tutorial intro lists exactly the three easy types and explains the
+  hint; the `pick-correct` phase shows the real prompt line.
+- **The `explain-correct` modal in easy mode showed only director + cast,
+  not screenwriter** — the mode-scoped `connectionsBetween` doing its job,
+  which was the specific risk of the tutorial teaching a rule easy ignores.
+- A live easy round showed "WHICH MOVIE SHARES A DIRECTOR WITH THE TOP
+  TILE?", picking the rarer type over cast exactly as `HINT_PREFERENCE`
+  intends.
+- **Pool filter confirmed against real rendered output:** all four movies
+  in a live easy round (Osmosis Jones 31, Freddy's Dead 37, Shazam! Fury of
+  the Gods 39, The Darjeeling Limited 37 sitelinks) clear the ≥30 floor —
+  i.e. the current movie AND all three candidates, not just the correct
+  answer.
+- Regular mode shows the open-ended prompt with no hint, and visibly
+  obscurer titles (*It's All Gone Pete Tong*, *Atlas Shrugged: Part I*) —
+  the intended contrast.
+- Status-bar mode badge, `CHANGE DIFFICULTY` → selector → new mode, the
+  quit flow, and the chain modal (mode-scoped reason text) all work.
+- **Leaderboard split confirmed live:** `highscores_easy` is empty (a score
+  of 5 was offered a top-10 slot), while regular still shows the full
+  pre-existing board (WIL 172, 50, 43, BLN 34, …) — the existing scores
+  survived untouched, which was the whole reason for splitting by
+  collection rather than adding a `mode` field.
+
+---
+
 ## 6. Hard-won technical findings — READ BEFORE CHANGING THINGS
 
 **The sandbox has no general internet access.** Cowork's Linux sandbox can
@@ -740,6 +970,38 @@ on-disk caches (`cache/`, `cache_films/`). Full music run takes a few hours.
 ---
 
 ## 9. Open items / next steps
+
+**Difficulty modes (Easy/Regular) — built 2026-08-08, see section 5c for
+the full spec, measurements and decided constraints:**
+- [x] Ship `sitelinks` as a per-movie field in `connections.json` (option
+  1's data prerequisite) — generator, regenerated data, both shipped
+  copies, `movieLadder.ts` types. Verified ID-stable, so existing saved
+  games survive it.
+- [x] Option 1: pool filtering by sitelinks (Easy ≥30, 3,765 movies),
+  applied to the whole round via `ModeEngine`, plus `randomStartMovie()`
+  for the dead-end class the filter introduces.
+- [x] Option 2: `ACTIVE_CONNECTION_TYPES` is now per-mode `MODE_CONFIG`
+  (Easy = series/director/cast), mirrored in `movieLadder.ts` and
+  `round_selector.py`.
+- [x] Option 4: connection category named up front in Easy, with
+  `same_series` suppressed and rarest-type preference. See section 5c for
+  why this lever turned out weaker than expected (93% of hints are "cast
+  member" — it's the graph shape, not a bug).
+- [x] Shared plumbing: per-mode leaderboard collections (+
+  `firestore.rules`), `SavedGame.mode` + `SAVE_VERSION` v1→v2, mode-aware
+  tutorial copy, mode selector screen.
+- [x] Verified in-browser, 2026-08-08 — mode select, both tutorials, live
+  rounds in each mode, hint prompt, pool filter (checked candidate
+  sitelinks against the ≥30 floor in a real round), mode badge, CHANGE
+  DIFFICULTY, quit/chain flows, and both leaderboards. Zero console
+  errors. See section 5c for the itemized results.
+- [x] `TUTORIAL_FLOW.md` betting/scoring copy resynced with the shipped
+  tutorial (2026-08-08) — it had still described the pre-2026-08-01 betting
+  rules (stake one strike, +10 win, −2 strikes loss) and the pre-escalation
+  flat +1/+5/+10 scoring, both superseded long before the modes work.
+- [ ] Not playtested: whether Easy actually *feels* easier, and whether ≥30
+  is the right threshold (25 and 40 are one constant away —
+  `EASY_MIN_SITELINKS`).
 
 **Movie Ladder — updated 2026-08-01, this is the current punch list:**
 - [x] Run full `films_enrich.py` 1950–2026 — done, 17,009 films, verified,
