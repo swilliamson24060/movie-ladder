@@ -135,6 +135,58 @@ MAJOR_AWARD_PREFIXES = (
 )
 
 
+# Wikidata's P179 ("part of the series") is also used for things that are
+# emphatically NOT franchises: studio filmographies and critics' lists. Two
+# films both appearing on a best-of list, or both being made by the same
+# animation studio, is not a connection a player could ever spot, and it
+# defeats the point of same_series -- so these are excluded the same way
+# obscure awards are (see is_major_award).
+#
+# Found in the real dataset (2026-08-08) and now excluded: "BBC's 100
+# Greatest Films of the 21st Century" (26 films), "list of Sony Pictures
+# Animation productions" (13), "list of Illumination films" (6), "list of
+# Pixar films", "list of Pixar shorts". Everything else in the 352 series
+# groups is a real franchise (Bond, MCU, X-Men, Scooby-Doo, Halloween, ...),
+# so this filter is deliberately narrow: it targets the curated-list and
+# studio-filmography shapes, not any judgment about franchise size.
+NON_SERIES_PATTERNS = (
+    "greatest",         # BBC's 100 Greatest Films of the 21st Century
+    "national film registry",
+    "sight and sound",
+    "criterion collection",
+    "filmography",
+    "productions",      # "list of Sony Pictures Animation productions"
+)
+
+# Studio filmographies whose names don't contain any of the patterns above.
+# Kept as an explicit set rather than a blanket "list of" rule, because
+# Wikidata expresses several REAL franchises as list items too -- "list of
+# Alien (franchise) films and television series", "list of The Flintstones
+# films", "list of Tom and Jerry feature films", "list of Barbie films".
+# Excluding all "list of" values would drop those franchises' series links,
+# which is actively counterproductive: the per-floor franchise cap (see
+# CLAUDE.md section 5b) relies on same_series to notice a franchise chain,
+# so dropping a real franchise here would let it chain unchecked through
+# shared cast instead. Studio lists get excluded; franchise lists stay.
+NON_SERIES_EXACT = {
+    "list of Pixar films",
+    "list of Pixar shorts",
+    "list of Illumination films",
+}
+
+
+def is_real_series(name):
+    """False for P179 values that are curated lists or studio filmographies
+    rather than franchises. Both the dropped values and any surviving
+    "list of ..." values are printed at build time, so a future dataset
+    regeneration surfaces new cases for triage instead of silently shipping
+    a best-of list as a franchise."""
+    if name in NON_SERIES_EXACT:
+        return False
+    lowered = name.lower()
+    return not any(p in lowered for p in NON_SERIES_PATTERNS)
+
+
 def is_major_award(name):
     if name.startswith("Academy Award") or name.endswith("Academy Award"):
         return True
@@ -181,6 +233,7 @@ def main():
     args = ap.parse_args()
 
     movies = {}  # movie_id (string, internal only = wikidata_id) -> metadata
+    dropped_series_values = set()  # P179 values rejected as lists, reported below
     groups = defaultdict(lambda: defaultdict(set))
 
     with open(args.csv, newline="", encoding="utf-8") as f:
@@ -209,6 +262,9 @@ def main():
             for conn_type, column in MULTI_VALUE_CONNECTIONS.items():
                 for value in split_multi(row.get(column, "")):
                     if conn_type == "same_award" and not is_major_award(value):
+                        continue
+                    if conn_type == "same_series" and not is_real_series(value):
+                        dropped_series_values.add(value)
                         continue
                     add(groups, conn_type, value, movie_id)
 
@@ -332,6 +388,20 @@ def main():
     print(f"{'connection_type':<24}{'groups':>8}{'movies covered':>16}{'avg size':>10}{'max size':>10}")
     for conn_type, s in sorted(stats.items(), key=lambda x: -x[1]["total_movies_involved"]):
         print(f"{conn_type:<24}{s['num_groups']:>8}{s['total_movies_involved']:>16}{s['avg_group_size']:>10}{s['largest_group']:>10}")
+
+    if dropped_series_values:
+        print(f"\nsame_series: dropped {len(dropped_series_values)} curated-list/"
+              f"filmography value(s) that aren't franchises (see NON_SERIES_PATTERNS):")
+        for value in sorted(dropped_series_values):
+            print(f"  - {value}")
+    # Wikidata names some real franchises as list items, so surviving
+    # "list of ..." values are printed for triage rather than assumed good.
+    kept_lists = sorted(v for v in final.get("same_series", {}) if v.lower().startswith("list of"))
+    if kept_lists:
+        print(f"\nsame_series: kept {len(kept_lists)} \"list of ...\" value(s) judged to be real "
+              f"franchises -- check these if a new one appears:")
+        for value in kept_lists:
+            print(f"  + {value}")
 
     # Sitelink (recognizability) distribution of the shipped pool, so the
     # difficulty-mode thresholds can be picked/sanity-checked at build time

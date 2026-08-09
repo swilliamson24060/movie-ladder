@@ -363,18 +363,63 @@ that would look like a marathon. All round-building now goes through one
 sites. Mirrored in `round_selector.py` (`series_mates()` +
 `block_series_links`).
 
-**Measured before building, and worth knowing: this is a guardrail for a
-rare case, not a fix for a common one.** Over 4,000 simulated floors per
-mode, floors already exceeding 2 franchise links were 0.10% (easy) and
-0.07% (regular); with the cap the engine engaged it on 20 floors in easy
-and 2 in regular, and had to override it (only franchise-mates available)
-just twice in easy, never in regular. No new dead ends. Spot-checked
-against a real franchise hub: Iron Man has 37 franchise-mates in the pool,
-yet only 1 of 30 unconstrained rounds picked one (its cast connections
-vastly outnumber its franchise ones) — 0 of 30 with the cap engaged. **If
-franchise repetition still feels common in play, the cause is not
-consecutive `same_series` hops** and this cap won't address it; look at
-franchise films co-occurring via shared cast instead.
+**Measurement correction, 2026-08-08 — the global average badly understated
+this.** A first pass simulating random chains found only 0.10% (easy) /
+0.07% (regular) of floors exceeding 2 franchise links, which suggested a
+rare-case guardrail. That average is misleading, and a player report of
+**four James Bond films on one easy-mode floor** prompted a closer look.
+The real behaviour is conditional: chains rarely *enter* a franchise, but
+once inside one they stick hard. In easy mode Dr. No has just 58
+connections in the pool and **26 of them are other Bond films** — so each
+hop out of a Bond film has a ~45% chance of landing on another Bond film
+(26% averaged across the 27 Bond films in the easy pool). Easy makes this
+much worse than regular: the ≥30-sitelink floor keeps all 27 Bond films
+(they're all famous) while cutting the surrounding pool, and easy's
+three-type list means the dense Bond cast overlap dominates. So the cap
+matters far more than the global number implied. **Don't re-derive
+franchise risk from a whole-dataset average — measure conditionally, from
+inside a franchise.**
+
+Verified on the regenerated data: 10,000 rounds per mode with zero
+invariant failures and zero floors over the cap, and a chain starting from
+a Bond film now reaches at most **3 Bond films in a floor** (the 2 allowed
+connections joining them), down from the 4+ that was possible before. Note
+the cap resets per floor, so a franchise can still resume on the next one.
+
+**Curated lists and studio filmographies excluded from `same_series`
+(2026-08-08).** Wikidata's P179 ("part of the series") is also used for
+things that aren't franchises at all, and they were shipping as real
+franchise connections: **"BBC's 100 Greatest Films of the 21st Century"**
+(26 films — flagged by the user), plus studio filmographies "list of Sony
+Pictures Animation productions" (13), "list of Illumination films" (6),
+"list of Pixar films" and "list of Pixar shorts". Two films appearing on
+the same critics' list, or coming from the same animation studio, is not a
+connection a player can spot. `is_real_series()` in
+`connections_generator.py` now excludes them (`NON_SERIES_PATTERNS` +
+`NON_SERIES_EXACT`).
+
+**The filter is deliberately NOT a blanket "list of" rule**, which was the
+first attempt and was wrong: Wikidata expresses several *real* franchises
+as list items — "list of Alien (franchise) films and television series",
+"list of The Flintstones films", "list of Tom and Jerry feature films",
+"list of Barbie films". Dropping those would be actively counterproductive,
+because the per-floor franchise cap above relies on `same_series` to notice
+a franchise chain; strip a real franchise's series link and it chains
+unchecked through shared cast instead, which is exactly the failure being
+fixed. So studio/critics lists are excluded and franchise lists are kept.
+The generator now prints both the dropped values *and* any surviving
+"list of ..." values at build time, so a future regeneration surfaces new
+cases for triage rather than silently shipping a best-of list as a
+franchise.
+
+Result: 352 → 348 series groups, all real franchises intact (Bond, MCU,
+Harry Potter, Alien, X-Men, Star Wars, Barbie). **This regeneration shifted
+movie IDs** — one movie lost its only connection and dropped out, which
+renumbered 2,085 array positions after it. Existing saved games are
+therefore invalidated, but safely: `titleCheck` detects the mismatch on
+load and discards the save rather than showing wrong movies (see section
+9's save-game entry). Leaderboard scores are unaffected — they store names
+and scores, not movie IDs.
 
 **Betting blocked at 4 strikes, bug fix 2026-08-01.** A bet floor's miss
 still costs its normal 1 strike (see the rework above -- there's no
