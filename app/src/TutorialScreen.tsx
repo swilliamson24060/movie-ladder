@@ -113,7 +113,7 @@ export default function TutorialScreen({
             'Jackie Brown connects to Kill Bill: Volume 2 by:',
             ...formatMatches(script.betRound).map((l) => `• ${l}`),
             '',
-            '+5 points, same as any correct pick. A real bet pays off separately, at the end of the floor: finish the whole floor with zero strikes and its completion bonus doubles. Miss even once and the bet’s off, though strikes still cost their normal amount either way.',
+            '+5 points, same as any correct pick. A real bet pays off separately, at the end of the floor: finish the whole floor with zero strikes and its completion bonus doubles. Miss even once and the bet is lost — that floor’s completion bonus is forfeited and every wrong answer on it subtracts double its point value. Strikes still cost their normal amount either way.',
           ]}
           button={COPY['betting-win'].button}
           onAdvance={advance}

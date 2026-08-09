@@ -102,11 +102,37 @@ function getApp(): FirebaseApp {
 // never hangs indefinitely regardless of why Firestore is unreachable.
 const TIMEOUT_MS = 6000;
 
-function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, fallback: T, label: string): Promise<T> {
   return Promise.race([
     promise,
-    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), TIMEOUT_MS)),
+    new Promise<T>((resolve) =>
+      setTimeout(() => {
+        warn(`${label} timed out after ${TIMEOUT_MS}ms`);
+        resolve(fallback);
+      }, TIMEOUT_MS)
+    ),
   ]);
+}
+
+/**
+ * Every failure in this module is swallowed so a leaderboard problem can
+ * never break the game loop -- but swallowing them silently left no trace
+ * anywhere, which made a real misconfiguration (Firestore rules with no
+ * match block for a collection, so reads AND writes are denied) look
+ * identical to an empty board from the outside: no error, no prompt, no
+ * scores, nothing in the console. These warnings exist purely so that case
+ * is diagnosable. They're warnings, not errors: nothing here is fatal to
+ * the game.
+ *
+ * A `permission-denied` code here almost always means the rules in
+ * /firestore.rules haven't been published to the Firebase project yet --
+ * that file is inert until it's pasted into the console (or deployed with
+ * `firebase deploy --only firestore:rules`).
+ */
+function warn(message: string, error?: unknown): void {
+  const code =
+    error && typeof error === 'object' && 'code' in error ? ` [${(error as { code: string }).code}]` : '';
+  console.warn(`[leaderboard] ${message}${code}`, error ?? '');
 }
 
 /** Top 10 scores for one mode, highest first. Reports `unavailable` (rather
@@ -133,11 +159,13 @@ export async function fetchTopScores(mode: Mode): Promise<LeaderboardResult> {
             return { name: String(data.name ?? '???'), score: Number(data.score ?? 0) };
           }),
         };
-      } catch {
+      } catch (error) {
+        warn(`could not read the "${collectionFor(mode)}" collection`, error);
         return unavailable;
       }
     })(),
-    unavailable
+    unavailable,
+    `read of "${collectionFor(mode)}"`
   );
 }
 
@@ -150,7 +178,13 @@ export async function wouldQualify(score: number, mode: Mode): Promise<boolean> 
   // If the board couldn't be read, don't offer the initials prompt: the
   // submission would hit the same unreachable Firestore and fail silently,
   // so the player would type their name into a form that does nothing.
-  if (result.status !== 'ok') return false;
+  if (result.status !== 'ok') {
+    warn(
+      `skipping the high-score prompt for ${score} points: the "${collectionFor(mode)}" ` +
+        `board could not be read, so a submission would fail too`
+    );
+    return false;
+  }
   if (result.entries.length < LEADERBOARD_SIZE) return true;
   const lowest = result.entries[result.entries.length - 1].score;
   return score > lowest;
@@ -169,10 +203,14 @@ export async function submitScore(name: string, score: number, mode: Mode): Prom
           score,
           createdAt: serverTimestamp(),
         });
-      } catch {
-        // Swallowed -- see module docs.
+      } catch (error) {
+        // Swallowed for the player -- see module docs -- but logged, since
+        // a silently-dropped score is the single most confusing failure
+        // this module can have.
+        warn(`could not submit ${score} to the "${collectionFor(mode)}" collection`, error);
       }
     })(),
-    undefined
+    undefined,
+    `submit to "${collectionFor(mode)}"`
   );
 }

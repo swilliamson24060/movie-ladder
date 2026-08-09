@@ -171,8 +171,12 @@ decline path. Copy:
 > A bet stakes your entire next floor:
 > - **Win** → finish that floor with zero strikes and its completion bonus
 >   doubles
-> - **Lose** → miss even once and the bet's off — strikes still cost their
->   normal amount either way
+> - **Lose** → miss even once and it costs you: that floor's completion
+>   bonus is gone, and every wrong answer on the floor subtracts double its
+>   point value
+>
+> Strikes themselves still cost their normal amount either way — the
+> penalty is in points, not lives.
 >
 > Let's take the bet.
 
@@ -201,8 +205,10 @@ Copy:
 >
 > +5 points, same as any correct pick. A real bet pays off separately, at
 > the end of the floor: finish the whole floor with zero strikes and its
-> completion bonus doubles. Miss even once and the bet's off, though
-> strikes still cost their normal amount either way.
+> completion bonus doubles. Miss even once and the bet is lost — that
+> floor's completion bonus is forfeited and every wrong answer on it
+> subtracts double its point value. Strikes still cost their normal amount
+> either way.
 
 Note the modal deliberately does **not** claim this single pick "won" the
 bet — winning now requires completing a whole floor, and the tutorial only
@@ -319,3 +325,26 @@ The tutorial is now mode-aware (CLAUDE.md section 5c). What changed:
 Everything else in the script — phases, scoring copy, betting demo — is
 identical in both modes, because the modes deliberately change only which
 rounds get built, not the run's economy.
+
+
+## Bet-loss penalty added (2026-08-08)
+
+Losing a bet used to cost nothing beyond the doubled bonus it had already
+forfeited, which made accepting one close to free. A lost bet floor now
+also:
+
+- subtracts **double that floor's per-tile value for every wrong answer on
+  the floor** (not just the miss that broke the bet), and
+- forfeits the floor's completion bonus **entirely** — the `2*N*correct`
+  share as well as the flat +10.
+
+So a lost bet floor scores exactly `(5*N*correct) - (2*5*N*wrong)`: floor 2
+with 3 of 4 correct pays 10, floor 3 with 3 of 4 pays 15. Strikes still
+cost their normal 1, so this is a points penalty rather than a lives one.
+The score is clamped at 0 so a run can't go negative.
+
+The board keeps a banner up for the rest of a lost bet floor ("BET LOST —
+WRONG ANSWERS STILL COST DOUBLE THIS FLOOR"), since the gold "still
+winnable" marking switches off but the player remains exposed to the
+penalty. See CLAUDE.md section 5b for the implementation note on why
+`isBetFloor` now survives the first miss.

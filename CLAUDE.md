@@ -304,6 +304,43 @@ original betting implementation):
   miss) correctly paid no bonus, no doubling, and only the normal 1
   strike, with the gold marking turning off immediately after the miss.
 
+**Losing a bet now costs points, decided 2026-08-08.** Supersedes the "No
+separate strike penalty for losing anymore" clause in the 2026-08-01 rework
+above — that made a bet nearly free upside (the only cost was a bonus you'd
+already forfeited by striking), so there was rarely a reason to decline one.
+A lost bet floor now takes two hits:
+- **Every wrong answer on the floor subtracts double that floor's per-tile
+  value** (`BET_LOSS_PENALTY_MULTIPLIER = 2`, so `2 * 5 * N` per miss).
+  Every wrong answer, not just the one that broke the bet.
+- **The completion bonus is forfeited outright** — not just the doubling
+  and not just the flat +10, the whole `2*N*correct` too.
+
+So a lost bet floor scores exactly `(5*N*correct) - (2*5*N*wrong)`. The two
+worked examples this was specified with: floor 2 with 3 of 4 correct =
+`(5*2*3) - (2*5*2)` = **10**; floor 3 with 3 of 4 = `(5*3*3) - (2*5*3)` =
+**15**. Both verified against the shipped constants. Strikes still cost
+their normal 1 — this is a points penalty, not a strike penalty, so the
+`MIN_STRIKES_LEFT_TO_BET` gate below is unaffected.
+
+**Implementation note worth not re-deriving:** `isBetFloor` previously
+flipped to false on the first miss (to switch off the gold marking). It now
+stays true for the whole floor, because a second miss still has to be
+penalised and the completion bonus still has to know a bet was placed.
+"Still winnable" is derived instead (`betStillWinnable = isBetFloor &&
+!groupHadStrike`) and is what drives the gold marking; once the bet is lost
+the board shows a red "BET LOST — WRONG ANSWERS STILL COST DOUBLE THIS
+FLOOR" banner, since the player is still exposed to a cost they opted into.
+No `SAVE_VERSION` bump was needed: the only new persisted field
+(`floorBetLost`) is optional and cosmetic, and the changed `isBetFloor`
+semantics only affect a save written mid-lost-bet-floor by the previous
+build.
+
+**Score is clamped at 0** (`Math.max(0, s - penalty)`) — not specified in
+the ask, chosen because the leaderboard already rejects scores of 0 or
+less, so there's nothing below zero to represent. A bad bet floor can
+otherwise subtract more than the run has earned (floor 3, 0 of 4 correct,
+would be −120).
+
 **Betting blocked at 4 strikes, bug fix 2026-08-01.** A bet floor's miss
 still costs its normal 1 strike (see the rework above -- there's no
 separate bet-loss penalty anymore), which meant accepting a bet at

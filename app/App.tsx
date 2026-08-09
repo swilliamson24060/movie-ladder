@@ -50,6 +50,15 @@ const FLOORS_BEFORE_BETTING = 1;
 // so accepting one at MAX_STRIKES - 1 strikes means a single miss both loses
 // the bet and ends the run in the same tap -- blocked as a bug fix, 2026-08-01.
 const MIN_STRIKES_LEFT_TO_BET = 2;
+// Losing a bet now costs points, not just the doubled bonus (decided
+// 2026-08-08). On a floor with a bet riding, EVERY wrong answer subtracts
+// double that floor's per-tile value, and the floor's completion bonus is
+// forfeited outright. So a lost bet floor scores exactly
+//   (TILE_POINTS_PER_FLOOR * N * correct) - (2 * TILE_POINTS_PER_FLOOR * N * wrong)
+// e.g. floor 2 with 3 of 4 correct: (5*2*3) - (2*5*2) = 10; floor 3 with 3
+// of 4: (5*3*3) - (2*5*3) = 15. Strikes themselves still cost their normal
+// 1 either way -- this is a points penalty, not a strike penalty.
+const BET_LOSS_PENALTY_MULTIPLIER = 2;
 
 function floorNumberFor(floorsCompleted: number): number {
   return floorsCompleted + 1; // 1-indexed: the floor currently in progress
@@ -107,6 +116,11 @@ interface SavedGame {
   // milestone-screen shows the exact same banner text.
   floorHadNoStrikes: boolean;
   floorBetWon: boolean;
+  // Optional: absent in saves written before the bet-loss penalty shipped,
+  // which just means a resumed milestone screen won't call out a lost bet.
+  // Not worth a SAVE_VERSION bump (and another discarded run) over one line
+  // of banner copy.
+  floorBetLost?: boolean;
   floorsCompleted: number;
   betOffer: boolean;
   // True while the "can't bet, not enough strikes left" notice is showing,
@@ -339,6 +353,11 @@ function GameScreen({
     () => savedGame?.floorHadNoStrikes ?? false
   );
   const [floorBetWon, setFloorBetWon] = useState(() => savedGame?.floorBetWon ?? false);
+  // Whether the floor just completed had a bet that was LOST -- distinct
+  // from "no bet" for the milestone banner, since a lost bet is the case
+  // where the completion bonus was forfeited outright and the player is
+  // owed an explanation for a floor that paid far less than usual.
+  const [floorBetLost, setFloorBetLost] = useState(() => savedGame?.floorBetLost ?? false);
   const [gameOver, setGameOver] = useState(() => savedGame?.gameOver ?? false);
   // How many floors have been completed this run -- gates the bet offer
   // (skips after floor 1) rather than tracking a separate boolean.
@@ -349,9 +368,12 @@ function GameScreen({
   // True while the "can't bet" notice is showing in place of the bet offer,
   // for a floor reached with too few strikes remaining to risk one.
   const [betBlocked, setBetBlocked] = useState(() => savedGame?.betBlocked ?? false);
-  // True for every round of the entire next floor once a bet is accepted
-  // (win condition: complete that floor with zero strikes) -- flips back
-  // to false the instant a strike breaks it, or once the floor resolves.
+  // True for every round of the entire floor once a bet is accepted, and it
+  // STAYS true after a miss breaks the bet -- because every wrong answer on
+  // a bet floor is penalised, not just the first (see
+  // BET_LOSS_PENALTY_MULTIPLIER). Cleared only when the floor resolves or
+  // the run restarts. Whether the bet is still winnable is derived below
+  // rather than stored, so there's no second flag to keep in sync.
   const [isBetFloor, setIsBetFloor] = useState(() => savedGame?.isBetFloor ?? false);
 
   // High-score leaderboard: modal visibility + its data (null = loading /
@@ -410,6 +432,7 @@ function GameScreen({
       floorScore,
       floorHadNoStrikes,
       floorBetWon,
+      floorBetLost,
       floorsCompleted,
       betOffer,
       betBlocked,
@@ -432,6 +455,7 @@ function GameScreen({
     floorScore,
     floorHadNoStrikes,
     floorBetWon,
+    floorBetLost,
     floorsCompleted,
     betOffer,
     betBlocked,
@@ -549,16 +573,23 @@ function GameScreen({
     const thisGroupHadStrike = groupHadStrike || !correct;
     const thisGroupCorrectCount = groupCorrectCount + (correct ? 1 : 0);
 
+    // Every wrong answer on a bet floor costs double this floor's per-tile
+    // value -- including ones after the bet is already unwinnable, since the
+    // rule penalises each wrong answer on the floor, not just the one that
+    // broke the bet. Clamped so a run can't go negative; the leaderboard
+    // rejects scores of 0 or less anyway, so there's nothing below 0 to
+    // represent.
+    const penalty = !correct && isBet ? BET_LOSS_PENALTY_MULTIPLIER * tileValue : 0;
+
     if (correct) setScore((s) => s + tileValue);
+    if (penalty > 0) setScore((s) => Math.max(0, s - penalty));
     if (!correct) setStrikes(newStrikes);
 
-    // A strike permanently forfeits this floor's bet -- winning requires
-    // finishing with zero strikes, so once one happens there's nothing
-    // left to preserve. Turning the bet off immediately (rather than
-    // waiting for the floor to finish) stops the gold "bet floor" marking
-    // on the rest of this floor's rounds, which would otherwise misleadingly
-    // suggest the bet is still winnable.
-    if (isBetFloor && !correct) setIsBetFloor(false);
+    // NB: isBetFloor is deliberately NOT cleared here on a miss. It has to
+    // survive to the end of the floor so later wrong answers are penalised
+    // too and the completion bonus is correctly forfeited. "Still winnable"
+    // is derived from it plus groupHadStrike (see betStillWinnable), which
+    // is what drives the gold marking off the moment a miss happens.
 
     // The chain always advances, right or wrong (CLAUDE.md section 5b).
     const newStack = [...stack, correctId];
@@ -571,17 +602,24 @@ function GameScreen({
     if (floorComplete) {
       const floorNum = floorNumberFor(floorsCompleted);
       const noStrikeBonus = thisGroupHadStrike ? 0 : FLOOR_NO_STRIKE_BONUS;
-      const completionBonus = FLOOR_BONUS_PER_CORRECT_PER_FLOOR * floorNum * thisGroupCorrectCount + noStrikeBonus;
-      // isBetFloor here reflects the outcome of every earlier pick this
-      // floor (it would already be false if any of them missed -- see
-      // above), so "still true AND this pick was correct too" is exactly
-      // "zero strikes across the whole floor," the bet's win condition.
-      const betWon = isBetFloor && correct && !thisGroupHadStrike;
+      // isBetFloor now stays true for the whole floor once a bet is taken
+      // (see confirmPick), so the bet's outcome is simply whether the floor
+      // ended clean.
+      const betWon = isBetFloor && !thisGroupHadStrike;
+      const betLost = isBetFloor && thisGroupHadStrike;
+      // A lost bet forfeits the completion bonus outright -- not just the
+      // doubling, and not just the no-strike +10. Combined with the
+      // per-wrong-answer penalty above, a lost bet floor scores exactly
+      // (tile points earned) - (2 x tile value x wrong answers).
+      const completionBonus = betLost
+        ? 0
+        : FLOOR_BONUS_PER_CORRECT_PER_FLOOR * floorNum * thisGroupCorrectCount + noStrikeBonus;
       const bonus = betWon ? completionBonus * 2 : completionBonus;
       setScore((s) => s + bonus);
       setFloorScore(bonus);
       setFloorHadNoStrikes(!thisGroupHadStrike);
       setFloorBetWon(betWon);
+      setFloorBetLost(betLost);
       setIsBetFloor(false);
       setGroupHadStrike(false);
       setGroupCorrectCount(0);
@@ -667,6 +705,7 @@ function GameScreen({
     setFloorScore(0);
     setFloorHadNoStrikes(false);
     setFloorBetWon(false);
+    setFloorBetLost(false);
     setGameOver(false);
     setFloorsCompleted(0);
     setBetOffer(false);
@@ -680,6 +719,12 @@ function GameScreen({
     setQuitFlowActive(false);
     slideAnim.setValue(0);
   }
+
+  // isBetFloor stays true for the whole floor so every wrong answer is
+  // penalised (see confirmPick), so it can't drive the gold marking on its
+  // own -- that has to stop the moment the bet becomes unwinnable, or the
+  // board would keep advertising a bet the player can no longer win.
+  const betStillWinnable = isBetFloor && !groupHadStrike;
 
   const stackMovies = stack.map((id) => {
     const m = game.movie(id);
@@ -742,9 +787,11 @@ function GameScreen({
               +{floorScore} points
               {floorBetWon
                 ? ' — bet won, completion bonus doubled!'
-                : floorHadNoStrikes
-                  ? ' — no strikes this floor!'
-                  : ''}
+                : floorBetLost
+                  ? ' — bet lost: completion bonus forfeited, wrong answers cost double'
+                  : floorHadNoStrikes
+                    ? ' — no strikes this floor!'
+                    : ''}
             </Text>
             <Pressable style={styles.button} onPress={continueAfterMilestone}>
               <Text style={styles.buttonText}>CONTINUE ▶</Text>
@@ -755,8 +802,9 @@ function GameScreen({
             <Text style={styles.milestoneText}>💰 WANT TO BET?</Text>
             <Text style={styles.betLine}>Stake the next floor: finish it with zero strikes and</Text>
             <Text style={styles.betLine}>that floor's completion bonus is doubled.</Text>
-            <Text style={styles.betLine}>Miss even once and the bet's off — strikes cost their</Text>
-            <Text style={styles.betLine}>normal amount either way.</Text>
+            <Text style={styles.betLine}>Miss even once and you lose the bet: no completion</Text>
+            <Text style={styles.betLine}>bonus, and every wrong answer that floor subtracts</Text>
+            <Text style={styles.betLine}>double its points. Strikes cost their normal amount.</Text>
             <View style={styles.betButtonRow}>
               <Pressable style={styles.betButtonSlot} onPress={() => resolveBetOffer(false)}>
                 <View style={styles.buttonSecondary}>
@@ -782,11 +830,19 @@ function GameScreen({
           </View>
         ) : (
           <>
-            {isBetFloor && (
+            {betStillWinnable ? (
               <Text style={styles.betRoundBanner}>
                 💰 BET FLOOR — ZERO STRIKES DOUBLES THIS FLOOR’S COMPLETION BONUS
               </Text>
-            )}
+            ) : isBetFloor ? (
+              // The bet is already lost, but the floor's penalty is still
+              // live -- every remaining wrong answer costs double. Saying so
+              // matters more than the gold marking did: the player is still
+              // exposed to a cost they opted into.
+              <Text style={[styles.betRoundBanner, { color: colors.red }]}>
+                💸 BET LOST — WRONG ANSWERS STILL COST DOUBLE THIS FLOOR
+              </Text>
+            ) : null}
             {/* In easy mode this names the connection category to look for
                 (option 4 of CLAUDE.md section 5c); in regular it's the
                 original open-ended prompt. Reads round.hintType rather than
@@ -804,7 +860,7 @@ function GameScreen({
                         title={m.title}
                         year={m.year}
                         compact
-                        state={isBetFloor ? 'bet' : 'default'}
+                        state={betStillWinnable ? 'bet' : 'default'}
                         onPress={() => pick(id)}
                       />
                     </View>
@@ -1141,7 +1197,10 @@ function ResultModal({
   // cost -- a miss always costs 1, whether or not a bet is riding on the
   // floor (see the constants comment at the top of this file).
   const displayStrikes = correct ? strikes : Math.min(MAX_STRIKES, strikes + 1);
-  const points = correct ? tileValue : 0;
+  // A wrong answer on a bet floor doesn't just score 0, it subtracts double
+  // the tile's value (see BET_LOSS_PENALTY_MULTIPLIER), so the modal has to
+  // show a negative rather than the usual "+0 points".
+  const points = correct ? tileValue : -(isBet ? BET_LOSS_PENALTY_MULTIPLIER * tileValue : 0);
 
   return (
     <Modal transparent animationType="fade">
@@ -1151,8 +1210,15 @@ function ResultModal({
             <Text style={[styles.modalTitle, { color: correct ? colors.green : colors.red }]}>
               {correct ? 'Correct!' : 'Not quite.'}
             </Text>
-            <Text style={[styles.modalScore, { color: correct ? colors.green : colors.textSecondary }]}>
-              +{points} point{points === 1 ? '' : 's'}
+            <Text
+              style={[
+                styles.modalScore,
+                { color: correct ? colors.green : points < 0 ? colors.red : colors.textSecondary },
+              ]}
+            >
+              {points >= 0 ? '+' : '−'}
+              {Math.abs(points)} point{Math.abs(points) === 1 ? '' : 's'}
+              {points < 0 ? ' (bet floor — wrong answers cost double)' : ''}
             </Text>
             {!correct && (
               <Text style={styles.modalLine}>
@@ -1172,7 +1238,7 @@ function ResultModal({
             {!correct && (
               <Text style={[styles.modalLine, styles.modalStrikes]}>
                 {displayStrikes}/{MAX_STRIKES} strikes used.
-                {isBet ? ' This also forfeits this floor’s bet.' : ''}
+                {isBet ? ' The bet is lost — this floor’s completion bonus is forfeited.' : ''}
               </Text>
             )}
           </ScrollView>

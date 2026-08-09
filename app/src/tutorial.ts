@@ -243,7 +243,7 @@ const COPY: CopyBook = {
   },
   'betting-offer': {
     body:
-      'A bet stakes your entire next floor:\n• Win → finish that floor with zero strikes and its completion bonus doubles\n• Lose → miss even once and the bet’s off — strikes still cost their normal amount either way\n\nLet’s take the bet.',
+      'A bet stakes your entire next floor:\n• Win → finish that floor with zero strikes and its completion bonus doubles\n• Lose → miss even once and it costs you: that floor’s completion bonus is gone, and every wrong answer on the floor subtracts double its point value\n\nStrikes themselves still cost their normal amount either way — the penalty is in points, not lives.\n\nLet’s take the bet.',
     button: 'TAKE THE BET ▶',
   },
   'betting-round': {
