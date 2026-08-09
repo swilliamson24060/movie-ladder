@@ -341,6 +341,41 @@ less, so there's nothing below zero to represent. A bad bet floor can
 otherwise subtract more than the run has earned (floor 3, 0 of 4 correct,
 would be −120).
 
+**Franchise hops capped at 2 per floor (decided 2026-08-08).** Long-running
+franchises are big enough to chain through end to end — the dataset's
+`same_series` groups include Marvel Cinematic Universe (38 films), James
+Bond (27, plus a 25-film "Eon James Bond series" subgroup), Scooby-Doo (24),
+The Infinity Saga (22), DC Extended Universe (15), X-Men (14), Star Trek
+(13), Batman in film (12) and Harry Potter — so a floor could in principle
+become a walk through one franchise, which reads as repetitive rather than
+clever. `MAX_SERIES_LINKS_PER_FLOOR = 2` in `App.tsx` caps how many of a
+floor's connections may be franchise links; `groupSeriesLinks` counts them
+and resets with the floor.
+
+Implemented as a **preference, not a hard constraint**: `buildRound`'s new
+`blockSeriesLinks` option filters franchise-mates out of the correct-answer
+pool, but falls back to the unfiltered pool if that would leave nothing,
+since refusing to build a round would end the run outright. Counted on
+every resolved round regardless of whether the player was right, because
+the correct movie joins the ladder either way and it's the placed chain
+that would look like a marathon. All round-building now goes through one
+`nextRound()` helper so the cap can't be missed at one of the five call
+sites. Mirrored in `round_selector.py` (`series_mates()` +
+`block_series_links`).
+
+**Measured before building, and worth knowing: this is a guardrail for a
+rare case, not a fix for a common one.** Over 4,000 simulated floors per
+mode, floors already exceeding 2 franchise links were 0.10% (easy) and
+0.07% (regular); with the cap the engine engaged it on 20 floors in easy
+and 2 in regular, and had to override it (only franchise-mates available)
+just twice in easy, never in regular. No new dead ends. Spot-checked
+against a real franchise hub: Iron Man has 37 franchise-mates in the pool,
+yet only 1 of 30 unconstrained rounds picked one (its cast connections
+vastly outnumber its franchise ones) — 0 of 30 with the cap engaged. **If
+franchise repetition still feels common in play, the cause is not
+consecutive `same_series` hops** and this cap won't address it; look at
+franchise films co-occurring via shared cast instead.
+
 **Betting blocked at 4 strikes, bug fix 2026-08-01.** A bet floor's miss
 still costs its normal 1 strike (see the rework above -- there's no
 separate bet-loss penalty anymore), which meant accepting a bet at

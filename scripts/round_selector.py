@@ -255,11 +255,30 @@ class MovieLadder:
                 return preferred
         return sorted(hintable)[0]
 
-    def build_round(self, movie_id, rng=None, exclude=None, max_attempts=200):
+    def series_mates(self, movie_id):
+        """Every movie in the pool sharing a franchise/series with this one.
+        Used to cap franchise hops per floor -- see build_round's
+        block_series_links. Mirrors seriesMates() in movieLadder.ts."""
+        mates = set()
+        for value in self._movie_values.get(movie_id, {}).get("same_series", set()):
+            mates |= self._pool_set & set(self.connections["same_series"][value])
+        mates.discard(movie_id)
+        return mates
+
+    def build_round(self, movie_id, rng=None, exclude=None, max_attempts=200,
+                    block_series_links=False):
         """Build a 3-candidate round for the movie on top of the stack:
         1 with a real connection (any type), 2 with zero connections by any
         type. Returns None if the movie has no valid next move at all (dead
-        end -- caller should pick a different movie to restart from)."""
+        end -- caller should pick a different movie to restart from).
+
+        block_series_links steers the correct answer away from franchise-
+        mates of the current movie; the caller sets it once a floor has used
+        its allowance of franchise hops (MAX_SERIES_LINKS_PER_FLOOR in
+        App.tsx -- the floor/scoring layer lives in the app, not here). It's
+        a preference, not a hard constraint: if every candidate is a
+        franchise-mate the round is still built, since refusing would end
+        the run outright."""
         rng = rng or random
         exclude = set(exclude or set()) | {movie_id}
 
@@ -267,7 +286,13 @@ class MovieLadder:
         if not connected:
             return None
 
-        correct_id = rng.choice(sorted(connected))
+        correct_pool = connected
+        if block_series_links:
+            non_mates = connected - self.series_mates(movie_id)
+            if non_mates:
+                correct_pool = non_mates
+
+        correct_id = rng.choice(sorted(correct_pool))
 
         decoys = []
         attempts = 0

@@ -59,6 +59,17 @@ const MIN_STRIKES_LEFT_TO_BET = 2;
 // of 4: (5*3*3) - (2*5*3) = 15. Strikes themselves still cost their normal
 // 1 either way -- this is a points penalty, not a strike penalty.
 const BET_LOSS_PENALTY_MULTIPLIER = 2;
+// Cap on franchise hops within a single floor (decided 2026-08-08). Long
+// runners are big enough to chain through on their own -- Marvel Cinematic
+// Universe has 38 films in the dataset, James Bond 27 (plus a 25-film Eon
+// subgroup), and X-Men, Star Wars, Star Trek, Batman and Harry Potter all
+// have their own groups -- so without a cap a floor can turn into a walk
+// through one franchise, which reads as repetitive rather than clever.
+// Counted per floor and reset with it. This is a preference applied when
+// picking the correct answer, not a hard rule: if a movie's only remaining
+// connections are franchise-mates, the round is still built (see
+// buildRound's blockSeriesLinks) rather than dead-ending the run.
+const MAX_SERIES_LINKS_PER_FLOOR = 2;
 
 function floorNumberFor(floorsCompleted: number): number {
   return floorsCompleted + 1; // 1-indexed: the floor currently in progress
@@ -109,6 +120,11 @@ interface SavedGame {
   // comment above), so this has to be tracked separately from just
   // "reached MAX_STACK_TILES," which every floor does regardless of misses.
   groupCorrectCount: number;
+  // How many franchise/series hops this floor has already used, capped by
+  // MAX_SERIES_LINKS_PER_FLOOR. Optional: absent in saves written before
+  // the cap shipped, in which case the current floor just starts its
+  // allowance over -- not worth a SAVE_VERSION bump (and a discarded run).
+  groupSeriesLinks?: number;
   floorScore: number;
   // Whether the most recently completed floor (the one floorScore/
   // floorBetWon describe) had zero strikes / had its bet won -- both only
@@ -317,6 +333,8 @@ function GameScreen({
   // own current movie, and B's real connections legitimately include A.
   const [history, setHistory] = useState<Set<number>>(() => new Set(savedGame?.history ?? stack));
   const [round, setRound] = useState<Round | null>(() =>
+    // A resumed run keeps the round it was saved with; a fresh one starts a
+    // floor with no franchise hops used yet, so the cap can't be active.
     savedGame ? savedGame.round : engine.buildRound(currentId, history)
   );
   // Set the instant a candidate is tapped, cleared once the player dismisses
@@ -345,6 +363,13 @@ function GameScreen({
   // per-correct-answer completion bonus.
   const [groupCorrectCount, setGroupCorrectCount] = useState(
     () => savedGame?.groupCorrectCount ?? 0
+  );
+  // Franchise hops used by the floor currently being built. Incremented
+  // whenever a resolved round's connection included same_series -- whether
+  // the player got it right or not, since the correct movie is placed
+  // either way and it's the placed chain that would look repetitive.
+  const [groupSeriesLinks, setGroupSeriesLinks] = useState(
+    () => savedGame?.groupSeriesLinks ?? 0
   );
   // Points the most recently completed floor earned, shown in the
   // milestone banner. Only meaningful while `milestone` is true.
@@ -429,6 +454,7 @@ function GameScreen({
       strikes,
       groupHadStrike,
       groupCorrectCount,
+      groupSeriesLinks,
       floorScore,
       floorHadNoStrikes,
       floorBetWon,
@@ -452,6 +478,7 @@ function GameScreen({
     strikes,
     groupHadStrike,
     groupCorrectCount,
+    groupSeriesLinks,
     floorScore,
     floorHadNoStrikes,
     floorBetWon,
@@ -566,12 +593,16 @@ function GameScreen({
 
   function confirmPick() {
     if (!pendingResult) return;
-    const { correctId, correct, isBet, tileValue } = pendingResult;
+    const { correctId, correct, isBet, tileValue, matches } = pendingResult;
     setPendingResult(null);
 
     const newStrikes = correct ? strikes : Math.min(MAX_STRIKES, strikes + 1);
     const thisGroupHadStrike = groupHadStrike || !correct;
     const thisGroupCorrectCount = groupCorrectCount + (correct ? 1 : 0);
+    // Counted whether or not the player was right: the correct movie joins
+    // the ladder either way, and it's the placed chain that would look like
+    // a franchise marathon.
+    const thisGroupSeriesLinks = groupSeriesLinks + ('same_series' in matches ? 1 : 0);
 
     // Every wrong answer on a bet floor costs double this floor's per-tile
     // value -- including ones after the bet is already unwinnable, since the
@@ -623,10 +654,12 @@ function GameScreen({
       setIsBetFloor(false);
       setGroupHadStrike(false);
       setGroupCorrectCount(0);
+      setGroupSeriesLinks(0);
       setFloorsCompleted((n) => n + 1);
     } else {
       setGroupHadStrike(thisGroupHadStrike);
       setGroupCorrectCount(thisGroupCorrectCount);
+      setGroupSeriesLinks(thisGroupSeriesLinks);
     }
 
     if (newStrikes >= MAX_STRIKES) {
@@ -647,7 +680,7 @@ function GameScreen({
       setRound(null);
       setMilestone(true);
     } else {
-      setRound(engine.buildRound(correctId, newHistory));
+      setRound(nextRound(correctId, newHistory, thisGroupSeriesLinks));
     }
   }
 
@@ -674,7 +707,8 @@ function GameScreen({
       } else if (offerBet) {
         setBetBlocked(true);
       } else {
-        setRound(engine.buildRound(topId, history));
+        // A completed floor resets the franchise allowance.
+        setRound(nextRound(topId, history, 0));
       }
     });
   }
@@ -682,12 +716,12 @@ function GameScreen({
   function resolveBetOffer(accepted: boolean) {
     setBetOffer(false);
     setIsBetFloor(accepted);
-    setRound(engine.buildRound(stack[stack.length - 1], history));
+    setRound(nextRound(stack[stack.length - 1], history, groupSeriesLinks));
   }
 
   function continueAfterBetBlocked() {
     setBetBlocked(false);
-    setRound(engine.buildRound(stack[stack.length - 1], history));
+    setRound(nextRound(stack[stack.length - 1], history, groupSeriesLinks));
   }
 
   function restart() {
@@ -695,13 +729,14 @@ function GameScreen({
     const startHistory = new Set([startId]);
     setStack([startId]);
     setHistory(startHistory);
-    setRound(engine.buildRound(startId, startHistory));
+    setRound(nextRound(startId, startHistory, 0));
     setPendingResult(null);
     setMilestone(false);
     setScore(0);
     setStrikes(0);
     setGroupHadStrike(false);
     setGroupCorrectCount(0);
+    setGroupSeriesLinks(0);
     setFloorScore(0);
     setFloorHadNoStrikes(false);
     setFloorBetWon(false);
@@ -718,6 +753,21 @@ function GameScreen({
     setShowQuitModal(false);
     setQuitFlowActive(false);
     slideAnim.setValue(0);
+  }
+
+  /**
+   * Single entry point for building the next round, so the franchise cap
+   * can't be forgotten at one of the several call sites (a new round is
+   * built after a pick, after a milestone, after a bet offer, after the
+   * "can't bet" notice, and on restart). `seriesLinks` is passed explicitly
+   * rather than read from state because most callers compute the floor's
+   * new count in the same tick that they build the round -- reading state
+   * there would use the pre-update value.
+   */
+  function nextRound(movieId: number, exclude: Set<number>, seriesLinks: number): Round | null {
+    return engine.buildRound(movieId, exclude, {
+      blockSeriesLinks: seriesLinks >= MAX_SERIES_LINKS_PER_FLOOR,
+    });
   }
 
   // isBetFloor stays true for the whole floor so every wrong answer is

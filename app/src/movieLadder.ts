@@ -318,11 +318,42 @@ export class ModeEngine {
   }
 
   /**
+   * Every movie sharing a franchise/series with this one, within the pool.
+   * Used to cap how many franchise hops a single floor can contain -- see
+   * buildRound's blockSeriesLinks option.
+   */
+  seriesMates(movieId: number): Set<number> {
+    const mates = new Set<number>();
+    const values = this.movieValues.get(movieId)?.get('same_series');
+    if (values) {
+      for (const value of values) {
+        for (const id of this.connections['same_series'][value]) {
+          if (this.poolSet.has(id)) mates.add(id);
+        }
+      }
+    }
+    mates.delete(movieId);
+    return mates;
+  }
+
+  /**
    * Build a 3-candidate round for the movie on top of the stack.
    * Returns null if the movie has no valid next move at all (a dead end --
    * caller should restart from a different movie).
+   *
+   * `blockSeriesLinks` steers the correct answer away from franchise-mates
+   * of the current movie -- the caller sets it once a floor has already
+   * used its allowance of franchise hops. It's a preference, not a hard
+   * constraint: if every available candidate is a franchise-mate, the round
+   * is still built rather than dead-ended, since refusing to build one
+   * would end the run outright.
    */
-  buildRound(movieId: number, exclude?: Set<number>, maxAttempts = 200): Round | null {
+  buildRound(
+    movieId: number,
+    exclude?: Set<number>,
+    options?: { blockSeriesLinks?: boolean },
+    maxAttempts = 200
+  ): Round | null {
     const excludeSet = new Set(exclude ?? []);
     excludeSet.add(movieId);
 
@@ -330,7 +361,14 @@ export class ModeEngine {
     for (const id of excludeSet) connected.delete(id);
     if (connected.size === 0) return null;
 
-    const correctId = randomOf([...connected]);
+    let correctPool = [...connected];
+    if (options?.blockSeriesLinks) {
+      const mates = this.seriesMates(movieId);
+      const nonMates = correctPool.filter((id) => !mates.has(id));
+      if (nonMates.length > 0) correctPool = nonMates;
+    }
+
+    const correctId = randomOf(correctPool);
 
     // Decoys: anything in the pool that is NOT connected to the current
     // movie by any of this mode's types. `connected` is exactly the set with
