@@ -125,6 +125,13 @@ interface SavedGame {
   // the cap shipped, in which case the current floor just starts its
   // allowance over -- not worth a SAVE_VERSION bump (and a discarded run).
   groupSeriesLinks?: number;
+  // Movies that reached the ladder because the player MISSED the round --
+  // the correct answer is auto-placed either way (section 5b), so the chain
+  // alone can't tell a solved rung from a handed-to-you one. Only the
+  // misses are stored, not every outcome: the run's first movie was never
+  // picked at all, and everything else not listed here was correct.
+  // Optional: an older save just shows its chain unannotated.
+  missedIds?: number[];
   floorScore: number;
   // Whether the most recently completed floor (the one floorScore/
   // floorBetWon describe) had zero strikes / had its bet won -- both only
@@ -371,6 +378,12 @@ function GameScreen({
   const [groupSeriesLinks, setGroupSeriesLinks] = useState(
     () => savedGame?.groupSeriesLinks ?? 0
   );
+  // Which placed movies came from a wrong pick -- drives the ✓/✗ marks in
+  // the chain review. Never reset by a milestone clear (like `history`),
+  // only by restart().
+  const [missedIds, setMissedIds] = useState<Set<number>>(
+    () => new Set(savedGame?.missedIds ?? [])
+  );
   // Points the most recently completed floor earned, shown in the
   // milestone banner. Only meaningful while `milestone` is true.
   const [floorScore, setFloorScore] = useState(() => savedGame?.floorScore ?? 0);
@@ -455,6 +468,7 @@ function GameScreen({
       groupHadStrike,
       groupCorrectCount,
       groupSeriesLinks,
+      missedIds: [...missedIds],
       floorScore,
       floorHadNoStrikes,
       floorBetWon,
@@ -479,6 +493,7 @@ function GameScreen({
     groupHadStrike,
     groupCorrectCount,
     groupSeriesLinks,
+    missedIds,
     floorScore,
     floorHadNoStrikes,
     floorBetWon,
@@ -628,6 +643,16 @@ function GameScreen({
     const newHistory = new Set(history);
     newHistory.add(correctId);
     setHistory(newHistory);
+    if (!correct) {
+      // Recorded against the movie that got placed, so the chain review can
+      // mark that rung as one the player missed.
+      setMissedIds((prev) => new Set(prev).add(correctId));
+    }
+    if (!correct) {
+      // Recorded against the movie that got placed, so the chain review can
+      // mark that rung as one the player missed.
+      setMissedIds((prev) => new Set(prev).add(correctId));
+    }
 
     const floorComplete = newStack.length >= MAX_STACK_TILES;
     if (floorComplete) {
@@ -737,6 +762,7 @@ function GameScreen({
     setGroupHadStrike(false);
     setGroupCorrectCount(0);
     setGroupSeriesLinks(0);
+    setMissedIds(new Set());
     setFloorScore(0);
     setFloorHadNoStrikes(false);
     setFloorBetWon(false);
@@ -947,6 +973,7 @@ function GameScreen({
           game={game}
           engine={engine}
           history={history}
+          missedIds={missedIds}
           onClose={() => setShowChain(false)}
         />
       )}
@@ -1035,6 +1062,7 @@ function ConnectionChainModal({
   game,
   engine,
   history,
+  missedIds,
   onClose,
 }: {
   game: MovieLadder;
@@ -1044,6 +1072,9 @@ function ConnectionChainModal({
   // movies connected.
   engine: ModeEngine;
   history: Set<number>;
+  /** Placed movies the player got wrong; everything else after the first
+   * was picked correctly. See SavedGame.missedIds. */
+  missedIds: Set<number>;
   onClose: () => void;
 }) {
   // `history` is a Set, but insertion order is exactly this run's chain
@@ -1051,25 +1082,51 @@ function ConnectionChainModal({
   // placed, across every floor, not just the current visible stack (which
   // gets collapsed down to one tile at each milestone).
   const chain = [...history];
+  // The opening movie was placed for the player, so it counts as neither.
+  const picked = Math.max(0, chain.length - 1);
+  const missedCount = chain.filter((id, i) => i > 0 && missedIds.has(id)).length;
 
   return (
     <Modal transparent animationType="fade">
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>🔗 THE CHAIN SO FAR</Text>
+          <Text style={styles.chainSummary}>
+            {chain.length} movie{chain.length === 1 ? '' : 's'} · {picked - missedCount} correct ·{' '}
+            {missedCount} missed
+          </Text>
           <ScrollView style={styles.modalScroll}>
             {chain.map((id, i) => {
               const movie = game.movie(id);
               const nextId = chain[i + 1];
               const matchLines =
                 nextId !== undefined ? formatMatches(engine.connectionsBetween(id, nextId)) : [];
+              // The run's opening movie was placed for the player, so it's
+              // neither right nor wrong -- everything after it was either
+              // picked correctly or auto-placed after a miss.
+              const isStart = i === 0;
+              const missed = missedIds.has(id);
               return (
                 <View key={`${id}-${i}`}>
                   <View style={styles.chainRow}>
-                    <Text style={styles.chainRank}>{i + 1}</Text>
+                    <Text
+                      style={[
+                        styles.chainMark,
+                        isStart
+                          ? styles.chainMarkStart
+                          : missed
+                            ? styles.chainMarkWrong
+                            : styles.chainMarkRight,
+                      ]}
+                    >
+                      {isStart ? '•' : missed ? '✗' : '✓'}
+                    </Text>
                     <View style={styles.chainCopy}>
                       <Text style={styles.chainTitle}>{movie.title}</Text>
-                      <Text style={styles.chainMeta}>{movie.year}</Text>
+                      <Text style={styles.chainMeta}>
+                        {movie.year}
+                        {isStart ? ' · starting movie' : missed ? ' · missed' : ''}
+                      </Text>
                     </View>
                   </View>
                   {matchLines.length > 0 && (
@@ -1567,12 +1624,24 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 2,
   },
-  chainRank: {
-    width: 24,
+  chainSummary: {
     color: colors.textSecondary,
-    fontWeight: '700',
     fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    marginBottom: 10,
   },
+  // Same 24px column the connector line uses, so the ✓/✗ marks and the │
+  // between rungs stay vertically aligned down the list.
+  chainMark: {
+    width: 24,
+    textAlign: 'center',
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  chainMarkRight: { color: colors.green },
+  chainMarkWrong: { color: colors.red },
+  chainMarkStart: { color: colors.textSecondary },
   chainCopy: { flex: 1 },
   chainTitle: {
     color: colors.textPrimary,
