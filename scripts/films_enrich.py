@@ -40,21 +40,36 @@ That's more requests than a single mega-query, but each one actually
 completes. Everything is cached to ./cache_films/ so the run is resumable.
 
 -------------------------------------------------------------------------
-KNOWN DATA CAVEAT: archive-footage "cast members"
+KNOWN DATA CAVEAT: cast members who weren't really in the film
 -------------------------------------------------------------------------
-Wikidata's P161 (cast member) includes people who appear only as archive
-footage. Forrest Gump, for example, lists John Lennon and Gerald Ford
-alongside Tom Hanks. The sitelink filter won't catch these -- they're very
-notable people, just not actors in the film.
+Wikidata's P161 (cast member) covers more than "acted in this film." Two
+kinds of entry cause bad game connections, and the sitelink filter catches
+NEITHER, because the people involved are genuinely famous:
 
-If this produces confusing game connections, add an occupation filter to
-the cast group: require the cast member to have P106 (occupation) =
-Q33999 (actor), i.e. insert into the cast OPTIONAL block:
+  1. Uncredited bit parts -- reported by a player after Harrison Ford
+     linked two films on the strength of an uncredited role. FIXED: the
+     cast query now excludes statements qualified with
+     pq:P3831 wd:Q16582801 ("uncredited appearance"). See
+     EXCLUDED_APPEARANCE_ROLES.
+
+  2. Archive footage -- Forrest Gump lists John Lennon and Gerald Ford
+     alongside Tom Hanks. STILL OPEN: the Wikidata item for this wasn't
+     confirmed when (1) was fixed, and guessing a QID fails silently
+     (filtering nothing). Add it to EXCLUDED_APPEARANCE_ROLES once
+     verified.
+
+A blunter alternative for both, considered and not taken: require the cast
+member to have P106 (occupation) = Q33999 (actor) by inserting
 
     ?castmember wdt:P106 wd:Q33999.
 
-Trade-off: that also drops legitimate actors whose Wikidata occupation
-field is incomplete, so verify coverage before enabling it globally.
+into the cast block. That drops legitimate actors whose occupation field is
+incomplete, and wouldn't help anyway for case (1) -- Harrison Ford is an
+actor. Verify coverage before enabling it globally.
+
+After changing the cast query, re-fetch just that group:
+
+    python3 films_enrich.py --refresh-group cast
 -------------------------------------------------------------------------
 """
 
@@ -83,6 +98,37 @@ SLEEP_BETWEEN_REQUESTS = 1.2
 failed_seed_years = []
 failed_enrich_batches = []  # list of (group_name, [qids]) tuples
 
+# Appearances that shouldn't count as "this person was in this film" for
+# game purposes, excluded by qualifier rather than by who the person is.
+#
+# Why this exists: the sitelink filter below keeps only well-known people,
+# which is exactly why it CANNOT catch this case -- a famous actor with an
+# uncredited bit part passes the notability test easily. Reported by a
+# player: Harrison Ford surfaced as the connection between two films on the
+# strength of an uncredited role (he has several from the late 60s/70s, e.g.
+# Zabriskie Point). Nobody can be expected to spot that, and it reads as a
+# wrong answer even though the data is technically correct. Same class of
+# problem as the archive-footage quirk already noted in CLAUDE.md section 6
+# (Forrest Gump listing John Lennon and Gerald Ford).
+#
+# Wikidata models this as a qualifier on the P161 statement:
+#   ?film p:P161 ?stmt . ?stmt ps:P161 ?person ; pq:P3831 wd:Q16582801
+# where P3831 is "object of statement has role" and Q16582801 is
+# "uncredited appearance". The truthy `wdt:P161` shortcut can't see
+# qualifiers at all, which is why the cast query switches to p:/ps:.
+#
+# Add QIDs here to exclude more appearance types (archive footage, cameos).
+# Their exact items weren't confirmed when this was written, so only the
+# verified one is listed -- a wrong QID here fails silently, filtering
+# nothing, so don't guess.
+EXCLUDED_APPEARANCE_ROLES = (
+    "Q16582801",  # uncredited appearance
+)
+
+# Which property vars need statement-level (p:/ps:) access so the qualifier
+# filter above can apply. Everything else keeps the cheaper truthy path.
+STATEMENT_ROLE_FILTERED = {"castmember"}
+
 # Property groups, deliberately kept small so each query completes.
 # name -> list of (sparql_var, property_path, output_column, min_target_sitelinks)
 #
@@ -92,6 +138,11 @@ failed_enrich_batches = []  # list of (group_name, [qids]) tuples
 # players and archive-footage cameos. A "shared cast member" game connection
 # hinging on an unknown extra is unplayable, so we keep only actors who are
 # themselves reasonably well known. 0 = no filter.
+#
+# Note the sitelink filter and EXCLUDED_APPEARANCE_ROLES solve two different
+# halves of the same problem: the filter drops unknown people, the qualifier
+# exclusion drops non-appearances by known people. Neither substitutes for
+# the other.
 PROPERTY_GROUPS = {
     "crew": [
         ("director", "wdt:P57", "directors", 0),
@@ -342,9 +393,33 @@ def build_property_query(qids, group_name):
         if min_sl:
             notability = (f' ?{var} wikibase:sitelinks ?{var}SL. '
                           f'FILTER(?{var}SL >= {min_sl}).')
-        where_parts.append(
-            f'  OPTIONAL {{ ?film {path} ?{var}.{notability} '
-            f'?{var} rdfs:label ?{var}Label. FILTER(lang(?{var}Label) = "en") }}')
+
+        if var in STATEMENT_ROLE_FILTERED:
+            # Cast needs statement-level access (p:/ps:) rather than the
+            # truthy wdt: shortcut, because the thing being excluded lives in
+            # a QUALIFIER on the statement -- see EXCLUDED_APPEARANCE_ROLES.
+            prop = path.split(":", 1)[1]  # "wdt:P161" -> "P161"
+            excluded = " ".join(f"wd:{q}" for q in EXCLUDED_APPEARANCE_ROLES)
+            where_parts.append(
+                f'  OPTIONAL {{\n'
+                f'    ?film p:{prop} ?{var}Stmt.\n'
+                f'    ?{var}Stmt ps:{prop} ?{var}.\n'
+                f'    FILTER NOT EXISTS {{\n'
+                f'      VALUES ?{var}ExcludedRole {{ {excluded} }}\n'
+                f'      ?{var}Stmt pq:P3831 ?{var}ExcludedRole.\n'
+                f'    }}\n'
+                # p:/ps: returns every statement including deprecated-rank
+                # ones, which the truthy wdt: path silently excluded. Without
+                # this, switching to statement-level access would ADD known-
+                # bad cast entries while removing uncredited ones.
+                f'    FILTER NOT EXISTS {{ ?{var}Stmt wikibase:rank wikibase:DeprecatedRank. }}\n'
+                f'   {notability}\n'
+                f'    ?{var} rdfs:label ?{var}Label. FILTER(lang(?{var}Label) = "en")\n'
+                f'  }}')
+        else:
+            where_parts.append(
+                f'  OPTIONAL {{ ?film {path} ?{var}.{notability} '
+                f'?{var} rdfs:label ?{var}Label. FILTER(lang(?{var}Label) = "en") }}')
 
     return f"""
 SELECT ?film
@@ -411,6 +486,13 @@ def main():
     ap.add_argument("--out", default="films.csv")
     ap.add_argument("--dry-run", action="store_true",
                     help="Print one query per phase and exit, no HTTP")
+    ap.add_argument("--refresh-group", action="append", default=[],
+                    metavar="NAME", choices=list(PROPERTY_GROUPS),
+                    help="Discard this property group's cache and re-fetch it "
+                         "(repeatable). Use after changing a group's query -- "
+                         "e.g. --refresh-group cast once the uncredited-role "
+                         "filter changed. Other groups stay cached, so this "
+                         "costs one group's worth of requests, not a full run.")
     args = ap.parse_args()
 
     if args.test_year:
@@ -429,6 +511,13 @@ def main():
         return
 
     qids = sorted(films)
+
+    for group_name in args.refresh_group:
+        path = cache_path(f"{group_name}.json")
+        if os.path.exists(path):
+            os.remove(path)
+            print(f"Discarded cached {group_name} data -- it will be re-fetched.")
+
     group_caches = {}
     for group_name in PROPERTY_GROUPS:
         print(f"Enriching: {group_name}")

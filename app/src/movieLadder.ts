@@ -88,14 +88,26 @@ const REGULAR_CONNECTION_TYPES = [
 const EASY_CONNECTION_TYPES = ['same_director', 'shared_cast_member', 'same_series'];
 
 /**
- * Easy's sitelink floor. 30 keeps 3,765 of 15,674 movies (24%) and, combined
- * with the reduced type list, leaves a median of 85 connections per movie
- * and a 1.4% dead-end rate (vs. 0.4% for regular) -- measured, not
- * estimated. The pool's overall median is 20 sitelinks, so roughly half of
- * regular's pool is obscure enough that a typical player is guessing blind
- * rather than reasoning; that's the thing this fixes.
+ * Easy's sitelink floor, raised 30 -> 40 on 2026-08-08 after testers found
+ * easy too hard. 40 keeps ~1,784 of 15,673 movies (11%) at a median degree
+ * of 84 -- still a healthy graph, per the threshold table in CLAUDE.md
+ * section 5c.
+ *
+ * Why this helps, given what was measured: at 30 the candidates were
+ * already reasonably well known (median 39 sitelinks), so the difficulty
+ * was never obscure *films* -- it's that spotting a shared cast member
+ * means recalling a cast list. A higher floor makes it likelier the player
+ * knows all three candidates well enough to reason about them, including
+ * eliminating the two decoys, which is what actually makes a round solvable
+ * rather than a guess.
+ *
+ * The trade-off is repetition: this is under half the previous pool, so the
+ * same films recur across runs sooner. If that becomes the complaint, bias
+ * rounds toward director/franchise connections (section 5c) rather than
+ * dropping this back down -- 80% of easy-pool movies have a director link
+ * available but only ~7% of rounds currently use one.
  */
-const EASY_MIN_SITELINKS = 30;
+const EASY_MIN_SITELINKS = 40;
 
 export const MODE_CONFIG: Record<Mode, ModeConfig> = {
   easy: {

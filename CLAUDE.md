@@ -758,10 +758,33 @@ connection graph; it doesn't, dead-end rate is essentially flat:
 | ≥ 30 | 3,765 | 24.0% | 12 (0.3%) | 115 |
 | ≥ 40 | 1,784 | 11.4% | 5 (0.3%) | 84 |
 
-**≥30 is the suggested Easy threshold** (3,765 movies, still a median of
-115 connections each) but the exact number isn't decided — the generator
-now prints this distribution at build time so it can be re-checked whenever
-the dataset is regenerated.
+**Raised to ≥40 on 2026-08-08 after testers reported easy was too hard**
+(was ≥30). The generator prints this distribution at build time so it can
+be re-checked whenever the dataset is regenerated.
+
+**What the measurement said before changing it, because it reframes the
+problem:** at ≥30, easy candidates already had a median of 39 sitelinks and
+the person connecting two films appeared in a median of 33 pool films —
+i.e. famous films joined by prolific people. So the difficulty was never
+obscure *movies*. It's that spotting a shared **cast member** requires
+recalling a cast list, which is a far deeper kind of knowledge than
+recognising a title, and 93% of easy hints say "a cast member" (see option
+4). Raising the floor to 40 lifts median candidate recognisability 39 → 49
+and makes it likelier the player knows all three candidates well enough to
+*eliminate* the decoys, which is what turns a round from a guess into a
+deduction. Verified at the new floor: 1,784-movie pool, 6,000 rounds with
+zero invariant failures, 7 dead-end restarts, all 10 scripted tutorial
+movies still in pool.
+
+**The trade-off is repetition** — this is under half the old pool, so films
+recur across runs sooner. If that becomes the complaint, the better lever is
+biasing rounds toward director/franchise links rather than lowering the
+floor again: **80% of easy-pool movies have a director link available but
+only ~7% of rounds currently use one**, because the correct answer is drawn
+uniformly from all connected movies and cast connections swamp the rest.
+That would need a per-floor same-director cap (the franchise cap gives the
+pattern) to avoid walking one filmography; median 4 director choices per
+movie, so there's room.
 
 **What shipped for this (2026-08-08):** `connections_generator.py` now
 carries `sitelinks` as a 5th per-movie field; `movie_fields` is
@@ -1011,6 +1034,41 @@ is too common" threshold. `connections_generator.py` should not produce a
 with music, where `same_song_genre`/`same_artist_genre` are shipped and
 working fine — song genre tagging didn't show this problem, so this
 decision is films-only, not a reason to revisit the music side.
+
+**Famous people with non-appearances defeat the cast notability filter
+(2026-08-08).** The sitelink filter keeps only well-known cast members,
+which is exactly why it can't catch this: a famous actor with an
+*uncredited* bit part sails through it. A player reported Harrison Ford
+being used as the connection between two films on the strength of an
+uncredited role (he has several from the late 60s/70s — Zabriskie Point
+and others). It reads as a wrong answer even though the data is technically
+correct, and no player could be expected to spot it.
+
+**Fix:** `films_enrich.py`'s cast query now excludes P161 statements
+qualified with `pq:P3831 wd:Q16582801` ("object of statement has role" =
+"uncredited appearance"). This required switching cast from the truthy
+`wdt:P161` shortcut to statement-level `p:P161`/`ps:P161`, since **`wdt:`
+cannot see qualifiers at all**. That switch has a subtle side effect worth
+knowing: `p:/ps:` also returns *deprecated-rank* statements that `wdt:`
+silently filtered, so the query adds
+`FILTER NOT EXISTS { ?stmt wikibase:rank wikibase:DeprecatedRank }` —
+without it, the fix would have removed uncredited roles while quietly
+adding known-bad ones.
+
+**Still open — archive footage** (the Forrest Gump / John Lennon case
+below). Same shape, same fix, but the Wikidata item for it wasn't confirmed
+and **a wrong QID here fails silently, filtering nothing**, so it was left
+out rather than guessed. Add it to `EXCLUDED_APPEARANCE_ROLES` once
+verified.
+
+Note the occupation filter (`P106 = Q33999`) suggested below would NOT have
+fixed this — Harrison Ford is an actor. The two filters address different
+halves: sitelinks drops unknown people, the qualifier drops
+non-appearances by known people.
+
+**Re-fetching after a cast-query change** doesn't need a full run:
+`python3 scripts/films_enrich.py --refresh-group cast` (new flag) discards
+just that group's cache and re-fetches it, leaving the other four cached.
 
 **Raw cast lists are unusable.** Wikidata P161 includes uncredited extras —
 Forrest Gump has 120+ cast members. **Fix:** filter cast members by their own

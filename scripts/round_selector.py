@@ -86,12 +86,12 @@ ACTIVE_CONNECTION_TYPES = {
 #   hint -- whether the app names the connection category before the pick.
 #     Python has no UI, so this is carried for parity/reference only.
 #
-# Easy's floor of 30 sitelinks keeps 3,765 of 15,674 movies; combined with
-# the reduced type list that leaves a median of 85 connections per movie and
-# a 1.4% dead-end rate (vs 0.4% for regular).
+# Easy's floor was raised 30 -> 40 on 2026-08-08 after testers found easy
+# too hard: 40 keeps ~1,784 of 15,673 movies at a median degree of 84, and
+# lifts median candidate recognizability from 39 to 49 sitelinks.
 MODE_CONFIG = {
     "easy": {
-        "min_sitelinks": 30,
+        "min_sitelinks": 40,  # raised from 30 (2026-08-08, testers found easy too hard)
         "connection_types": {"same_director", "shared_cast_member", "same_series"},
         "hint": True,
     },
