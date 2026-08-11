@@ -47,16 +47,20 @@ kinds of entry cause bad game connections, and the sitelink filter catches
 NEITHER, because the people involved are genuinely famous:
 
   1. Uncredited bit parts -- reported by a player after Harrison Ford
-     linked two films on the strength of an uncredited role. FIXED: the
-     cast query now excludes statements qualified with
-     pq:P3831 wd:Q16582801 ("uncredited appearance"). See
-     EXCLUDED_APPEARANCE_ROLES.
+     linked two films on the strength of an uncredited role. PARTIALLY
+     fixed: the cast query excludes statements qualified with
+     pq:P3831 wd:Q16582801 ("uncredited appearance"), which removed 85 cast
+     memberships across the dataset. But it does NOT fix the reported case,
+     and cannot: Zabriskie Point's Harrison Ford statement was inspected
+     directly in the Wikidata entity JSON and has *no qualifiers at all*.
+     Wikidata simply never recorded that the role was uncredited, so
+     there's nothing to filter on. See CLAUDE.md section 6 for the
+     alternatives that were measured and rejected.
 
   2. Archive footage -- Forrest Gump lists John Lennon and Gerald Ford
-     alongside Tom Hanks. STILL OPEN: the Wikidata item for this wasn't
-     confirmed when (1) was fixed, and guessing a QID fails silently
-     (filtering nothing). Add it to EXCLUDED_APPEARANCE_ROLES once
-     verified.
+     alongside Tom Hanks. STILL OPEN, and likely unfixable the same way:
+     the relevant QID wasn't confirmed, and even if it were, coverage would
+     be as patchy as (1).
 
 A blunter alternative for both, considered and not taken: require the cast
 member to have P106 (occupation) = Q33999 (actor) by inserting

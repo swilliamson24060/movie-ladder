@@ -1044,27 +1044,40 @@ uncredited role (he has several from the late 60s/70s — Zabriskie Point
 and others). It reads as a wrong answer even though the data is technically
 correct, and no player could be expected to spot it.
 
-**Fix:** `films_enrich.py`'s cast query now excludes P161 statements
-qualified with `pq:P3831 wd:Q16582801` ("object of statement has role" =
-"uncredited appearance"). This required switching cast from the truthy
-`wdt:P161` shortcut to statement-level `p:P161`/`ps:P161`, since **`wdt:`
-cannot see qualifiers at all**. That switch has a subtle side effect worth
-knowing: `p:/ps:` also returns *deprecated-rank* statements that `wdt:`
-silently filtered, so the query adds
-`FILTER NOT EXISTS { ?stmt wikibase:rank wikibase:DeprecatedRank }` —
-without it, the fix would have removed uncredited roles while quietly
-adding known-bad ones.
+**Partial fix, and the reported case is NOT fixed — don't re-attempt this
+without reading why.** `films_enrich.py`'s cast query now excludes P161
+statements qualified with `pq:P3831 wd:Q16582801` ("object of statement has
+role" = "uncredited appearance"). Re-running `--refresh-group cast` removed
+**85 cast memberships** (121,865 → 121,780) and dropped 30 people out of the
+graph entirely, so the mechanism works. But Harrison Ford still appears in
+all 54 of his films, Zabriskie Point included.
 
-**Still open — archive footage** (the Forrest Gump / John Lennon case
-below). Same shape, same fix, but the Wikidata item for it wasn't confirmed
-and **a wrong QID here fails silently, filtering nothing**, so it was left
-out rather than guessed. Add it to `EXCLUDED_APPEARANCE_ROLES` once
-verified.
+**Why: the underlying data isn't there.** Zabriskie Point's Harrison Ford
+statement was inspected directly (raw entity JSON via
+`Special:EntityData/Q139078.json`) and has **no qualifiers whatsoever** —
+Wikidata never recorded that the role was uncredited. It is indistinguishable
+from a lead role at the data level.
+
+**Alternatives measured and rejected** (sampled Zabriskie Point, Pulp
+Fiction, Star Wars IV, The Godfather, E.T. — all via raw entity JSON):
+
+| Signal | Coverage | Verdict |
+|---|---|---|
+| `P1545` billing order | **0 of 5 films** had it on any cast statement | unusable |
+| `P453` character role | Godfather 28/40, Star Wars 16/24, Pulp Fiction 6/35, E.T. 1/15, Zabriskie Point 0/7 | too inconsistent — requiring it would delete 14 of E.T.'s 15 cast |
+| `P3831` generally | Pulp Fiction's 5 uses are `Q1765879` = **"leading actor"**, a positive marker, not a negative one | too sparse to require |
+
+So there is no data-side fix for the Harrison Ford class of problem. The
+practical answer is at the **game** level: bias easy mode toward
+director/franchise connections (see section 5c), where an uncredited bit
+part can't arise by construction — a director credit is never a walk-on.
+That also fixes the "93% of hints say cast member" problem, so it's one
+change addressing two complaints.
 
 Note the occupation filter (`P106 = Q33999`) suggested below would NOT have
-fixed this — Harrison Ford is an actor. The two filters address different
-halves: sitelinks drops unknown people, the qualifier drops
-non-appearances by known people.
+helped either — Harrison Ford is an actor. The two filters address different
+halves: sitelinks drops unknown people, the qualifier drops annotated
+non-appearances by known people. Neither can drop an unannotated one.
 
 **Re-fetching after a cast-query change** doesn't need a full run:
 `python3 scripts/films_enrich.py --refresh-group cast` (new flag) discards
