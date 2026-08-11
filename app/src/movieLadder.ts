@@ -56,6 +56,55 @@ export interface ModeConfig {
   connectionTypes: Set<string>;
   /** Whether to name the connection category up front as a hint. */
   hint: boolean;
+  /**
+   * Connection types to steer the correct answer towards when the current
+   * movie offers a choice. Empty = no steering (the correct answer is drawn
+   * uniformly from everything connected, which is what regular does).
+   *
+   * Easy prefers director and franchise links for three separate reasons,
+   * all measured:
+   *  1. They're far easier to spot. Knowing who directed a film is common
+   *     knowledge in a way that recalling its full cast list isn't -- the
+   *     single biggest driver of "easy is too hard" feedback.
+   *  2. Without steering, cast swamps everything: 80% of easy-pool movies
+   *     have a director link available but only ~7% of rounds used one,
+   *     because cast connections vastly outnumber the rest.
+   *  3. A director credit can't be an uncredited walk-on, which sidesteps
+   *     the Harrison-Ford-in-Zabriskie-Point class of bad connection
+   *     entirely (see CLAUDE.md section 6 -- there is no data-side fix for
+   *     it, so avoiding the type is the only lever).
+   *
+   * Steering is a preference, never a requirement: if the current movie has
+   * no link of a preferred type, the round is built from whatever it does
+   * have rather than dead-ending.
+   */
+  preferConnectionTypes: string[];
+  /**
+   * Whether decoys are drawn from the correct answer's recognizability
+   * neighbourhood rather than uniformly from the pool.
+   *
+   * On in BOTH modes, for two different reasons.
+   *
+   * Easy needs it because preferring director links skews the correct answer
+   * famous -- a prolific director's other films are themselves well known --
+   * which pushed "correct answer is the most recognizable of the three" to
+   * 40% and handed the player a "just pick the one you know" strategy.
+   *
+   * Regular turned out to need it too, contradicting an earlier note in
+   * CLAUDE.md that declared the tell absent at 34% vs 33% by chance. That
+   * figure came from a 400-round sample; at 4,000 rounds the real numbers
+   * are 41-44% strictly most-famous against 21-23% strictly least, whether
+   * rounds are sampled independently or walked as a chain. The cause is
+   * structural: a movie's connections skew towards well-documented (hence
+   * well-known) films, while uniform decoys are drawn from a pool whose
+   * median is far lower. With matching on, both modes sit near symmetric.
+   *
+   * Trade-off worth knowing: matched decoys are equally obscure, so a player
+   * can no longer eliminate a candidate purely because they've never heard
+   * of it. That makes regular marginally harder as well as fairer. Flip this
+   * to false for regular to restore the old behaviour.
+   */
+  matchDecoyRecognizability: boolean;
 }
 
 /**
@@ -116,6 +165,8 @@ export const MODE_CONFIG: Record<Mode, ModeConfig> = {
     minSitelinks: EASY_MIN_SITELINKS,
     connectionTypes: new Set(EASY_CONNECTION_TYPES),
     hint: true,
+    preferConnectionTypes: ['same_director', 'same_series'],
+    matchDecoyRecognizability: true,
   },
   regular: {
     label: 'REGULAR',
@@ -123,6 +174,8 @@ export const MODE_CONFIG: Record<Mode, ModeConfig> = {
     minSitelinks: 0,
     connectionTypes: new Set(REGULAR_CONNECTION_TYPES),
     hint: false,
+    preferConnectionTypes: [],
+    matchDecoyRecognizability: true,
   },
 };
 
@@ -140,6 +193,15 @@ export function isMode(value: unknown): value is Mode {
  * see pickHintType.
  */
 const NON_HINTABLE_TYPES = new Set(['same_series']);
+
+/**
+ * How many sitelink-ranked neighbours either side of the correct answer the
+ * decoys are drawn from. Wide enough that decoys still vary run to run,
+ * narrow enough that all three candidates are comparably well known -- which
+ * both closes the recognizability tell and makes elimination a viable way to
+ * solve a round.
+ */
+const DECOY_RANK_WINDOW = 200;
 
 /**
  * When a round matches on more than one hintable type, name the rarest one:
@@ -223,6 +285,10 @@ export class ModeEngine {
   /** Movie IDs playable in this mode, i.e. passing the sitelink floor. */
   private pool: number[];
   private poolSet: Set<number>;
+  /** Pool ordered by sitelinks, plus each movie's index in it -- lets decoys
+   * be drawn from the correct answer's recognizability neighbourhood. */
+  private poolBySitelinks: number[];
+  private rankBySitelinks: Map<number, number>;
 
   constructor(base: MovieLadder, mode: Mode, connections: ConnectionsData['connections'], movieCount: number, sitelinksOf: (id: number) => number) {
     this.base = base;
@@ -249,10 +315,18 @@ export class ModeEngine {
       if (sitelinksOf(id) >= this.config.minSitelinks) this.pool.push(id);
     }
     this.poolSet = new Set(this.pool);
+
+    this.poolBySitelinks = this.pool.slice().sort((a, b) => sitelinksOf(a) - sitelinksOf(b));
+    this.rankBySitelinks = new Map();
+    this.poolBySitelinks.forEach((id, i) => this.rankBySitelinks.set(id, i));
   }
 
   movie(id: number): Movie {
     return this.base.movie(id);
+  }
+
+  sitelinksOf(id: number): number {
+    return this.base.sitelinks(id);
   }
 
   /** How many movies are playable in this mode (not the dataset total). */
@@ -330,16 +404,17 @@ export class ModeEngine {
   }
 
   /**
-   * Every movie sharing a franchise/series with this one, within the pool.
-   * Used to cap how many franchise hops a single floor can contain -- see
-   * buildRound's blockSeriesLinks option.
+   * Every movie in the pool sharing a connection of one specific type with
+   * this one -- e.g. every film by the same director, or in the same
+   * franchise. Used both to cap hops of a type (blockSeriesLinks /
+   * blockDirectorLinks) and to steer towards one (preferConnectionTypes).
    */
-  seriesMates(movieId: number): Set<number> {
+  matesOfType(movieId: number, connType: string): Set<number> {
     const mates = new Set<number>();
-    const values = this.movieValues.get(movieId)?.get('same_series');
+    const values = this.movieValues.get(movieId)?.get(connType);
     if (values) {
       for (const value of values) {
-        for (const id of this.connections['same_series'][value]) {
+        for (const id of this.connections[connType][value]) {
           if (this.poolSet.has(id)) mates.add(id);
         }
       }
@@ -348,22 +423,35 @@ export class ModeEngine {
     return mates;
   }
 
+  /** Franchise-mates specifically; see matesOfType. */
+  seriesMates(movieId: number): Set<number> {
+    return this.matesOfType(movieId, 'same_series');
+  }
+
   /**
    * Build a 3-candidate round for the movie on top of the stack.
    * Returns null if the movie has no valid next move at all (a dead end --
    * caller should restart from a different movie).
    *
-   * `blockSeriesLinks` steers the correct answer away from franchise-mates
-   * of the current movie -- the caller sets it once a floor has already
-   * used its allowance of franchise hops. It's a preference, not a hard
-   * constraint: if every available candidate is a franchise-mate, the round
-   * is still built rather than dead-ended, since refusing to build one
-   * would end the run outright.
+   * `blockSeriesLinks` / `blockDirectorLinks` steer the correct answer AWAY
+   * from franchise- or director-mates of the current movie -- the caller
+   * sets each once a floor has used its allowance of that hop type, so a
+   * floor can't become a walk through one franchise or one filmography.
+   *
+   * The mode's `preferConnectionTypes` then steers TOWARDS whatever's left
+   * of the preferred types (easy: director and franchise, which are much
+   * easier to spot than a shared cast member).
+   *
+   * Every one of these is a preference, never a hard constraint: each step
+   * keeps its filtered pool only if that pool is non-empty, so a movie whose
+   * only remaining option is the discouraged kind still gets a round rather
+   * than dead-ending the run. Blocks are applied before preferences, so a
+   * capped type can't be steered back in.
    */
   buildRound(
     movieId: number,
     exclude?: Set<number>,
-    options?: { blockSeriesLinks?: boolean },
+    options?: { blockSeriesLinks?: boolean; blockDirectorLinks?: boolean },
     maxAttempts = 200
   ): Round | null {
     const excludeSet = new Set(exclude ?? []);
@@ -374,10 +462,26 @@ export class ModeEngine {
     if (connected.size === 0) return null;
 
     let correctPool = [...connected];
-    if (options?.blockSeriesLinks) {
-      const mates = this.seriesMates(movieId);
+
+    const blockedTypes: string[] = [];
+    if (options?.blockSeriesLinks) blockedTypes.push('same_series');
+    if (options?.blockDirectorLinks) blockedTypes.push('same_director');
+    for (const connType of blockedTypes) {
+      const mates = this.matesOfType(movieId, connType);
       const nonMates = correctPool.filter((id) => !mates.has(id));
       if (nonMates.length > 0) correctPool = nonMates;
+    }
+
+    const preferred = this.config.preferConnectionTypes.filter(
+      (t) => !blockedTypes.includes(t)
+    );
+    if (preferred.length > 0) {
+      const wanted = new Set<number>();
+      for (const connType of preferred) {
+        for (const id of this.matesOfType(movieId, connType)) wanted.add(id);
+      }
+      const preferredPool = correctPool.filter((id) => wanted.has(id));
+      if (preferredPool.length > 0) correctPool = preferredPool;
     }
 
     const correctId = randomOf(correctPool);
@@ -389,12 +493,41 @@ export class ModeEngine {
     for (const id of connected) decoyExclude.add(id);
     decoyExclude.add(correctId);
 
+    // Decoys are matched to the correct answer's recognizability rather than
+    // drawn uniformly, for two reasons.
+    //
+    // 1. It closes a tell that steering towards director links opens up.
+    //    Uniform decoys were safe while the correct answer was also uniform
+    //    (measured at 34% "correct answer is the most famous of the three"
+    //    vs 33% by chance). But a prolific director's other films skew
+    //    famous, so preferring director links pushed that to 40% -- a real
+    //    edge for a player who just picks whichever title they know best.
+    // 2. It makes the decoys eliminable. A round is only solvable by
+    //    reasoning if the player recognizes all three candidates; one
+    //    obscure decoy turns it back into a guess.
+    // Matched by RANK, not by sitelink value. A value band (e.g. 0.6x-1.7x
+    // the correct answer's count) looks equivalent but isn't: the pool is
+    // heavily right-skewed, so a band around a famous film contains mostly
+    // less-famous films and the decoys still come out systematically weaker.
+    // Measured: the value-band version left the tell at 41%, barely moving
+    // it from the 40% it was introduced at. Taking the correct answer's
+    // neighbours in sitelink-sorted order is symmetric by construction --
+    // roughly as many candidates above it as below.
+    let decoySource = this.pool;
+    if (this.config.matchDecoyRecognizability) {
+      const rank = this.rankBySitelinks.get(correctId) ?? 0;
+      const lo = Math.max(0, rank - DECOY_RANK_WINDOW);
+      const hi = Math.min(this.poolBySitelinks.length, rank + DECOY_RANK_WINDOW + 1);
+      const neighbours = this.poolBySitelinks.slice(lo, hi).filter((id) => !decoyExclude.has(id));
+      if (neighbours.length >= 2) decoySource = neighbours;
+    }
+
     const decoys: number[] = [];
     let attempts = 0;
     while (decoys.length < 2 && attempts < maxAttempts) {
       attempts++;
-      const candidate = this.randomMovie(decoyExclude);
-      if (decoyExclude.has(candidate)) continue; // pool exhausted; see randomMovie
+      const candidate = randomOf(decoySource);
+      if (decoyExclude.has(candidate)) continue;
       decoyExclude.add(candidate);
       decoys.push(candidate);
     }

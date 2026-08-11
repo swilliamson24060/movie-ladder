@@ -77,8 +77,17 @@ ACTIVE_CONNECTION_TYPES = {
 #
 #   min_sitelinks -- filters the ENTIRE round (current movie, correct
 #     answer, and both decoys). Applying it to only the correct answer would
-#     create a "pick whichever one you've heard of" tell that measurably
-#     doesn't exist today (34% vs 33% by chance over 400 simulated rounds).
+#     worsen the recognizability tell described under
+#     match_decoy_recognizability.
+#   prefer_connection_types -- steer the correct answer towards these when
+#     the current movie offers a choice (easy only).
+#   match_decoy_recognizability -- draw decoys from the correct answer's
+#     sitelink-rank neighbourhood instead of uniformly. On in both modes:
+#     without it, "pick the best-known title" wins 41-44% of rounds against
+#     a 33% chance baseline, because a movie's connections skew towards
+#     well-documented films while uniform decoys come from a much lower
+#     median. An earlier 400-round sample put this at 34% and wrongly
+#     concluded there was no tell.
 #   connection_types -- easy drops screenwriter/composer, the two a player
 #     is least likely to know. Measured reach in the shipped data:
 #     shared_cast_member 96.2% of movies, same_director 82.7%,
@@ -94,13 +103,27 @@ MODE_CONFIG = {
         "min_sitelinks": 40,  # raised from 30 (2026-08-08, testers found easy too hard)
         "connection_types": {"same_director", "shared_cast_member", "same_series"},
         "hint": True,
+        # Steer the correct answer towards these when the current movie
+        # offers a choice -- a shared director is far easier to spot than a
+        # shared cast member, and can't be an uncredited walk-on.
+        "prefer_connection_types": ["same_director", "same_series"],
+        "match_decoy_recognizability": True,
     },
     "regular": {
         "min_sitelinks": 0,
         "connection_types": set(ACTIVE_CONNECTION_TYPES),
         "hint": False,
+        "prefer_connection_types": [],
+        "match_decoy_recognizability": True,
     },
 }
+
+# How many sitelink-ranked neighbours either side of the correct answer the
+# decoys come from when match_decoy_recognizability is on. Matching by RANK
+# rather than by sitelink value matters: the pool is right-skewed, so a value
+# band around a famous film still yields mostly less-famous decoys and leaves
+# the tell in place (measured: 41% vs the 33% chance baseline).
+DECOY_RANK_WINDOW = 200
 
 # Naming this type in a hint would give the answer away rather than narrow
 # the search (a franchise is usually obvious from the title alone), so a
@@ -157,6 +180,9 @@ class MovieLadder:
         floor = self.config["min_sitelinks"]
         self._pool = [i for i, row in enumerate(self.movies) if row[sitelinks_idx] >= floor]
         self._pool_set = set(self._pool)
+        self._sitelinks = {i: self.movies[i][sitelinks_idx] for i in self._pool}
+        self._pool_by_sitelinks = sorted(self._pool, key=lambda i: self._sitelinks[i])
+        self._rank = {mid: r for r, mid in enumerate(self._pool_by_sitelinks)}
 
     @staticmethod
     def _load(path):
@@ -255,18 +281,22 @@ class MovieLadder:
                 return preferred
         return sorted(hintable)[0]
 
-    def series_mates(self, movie_id):
-        """Every movie in the pool sharing a franchise/series with this one.
-        Used to cap franchise hops per floor -- see build_round's
-        block_series_links. Mirrors seriesMates() in movieLadder.ts."""
+    def mates_of_type(self, movie_id, conn_type):
+        """Every movie in the pool sharing a connection of one type with this
+        one. Used both to cap hops of a type and to steer towards one.
+        Mirrors matesOfType() in movieLadder.ts."""
         mates = set()
-        for value in self._movie_values.get(movie_id, {}).get("same_series", set()):
-            mates |= self._pool_set & set(self.connections["same_series"][value])
+        for value in self._movie_values.get(movie_id, {}).get(conn_type, set()):
+            mates |= self._pool_set & set(self.connections[conn_type][value])
         mates.discard(movie_id)
         return mates
 
+    def series_mates(self, movie_id):
+        """Franchise-mates specifically; see mates_of_type."""
+        return self.mates_of_type(movie_id, "same_series")
+
     def build_round(self, movie_id, rng=None, exclude=None, max_attempts=200,
-                    block_series_links=False):
+                    block_series_links=False, block_director_links=False):
         """Build a 3-candidate round for the movie on top of the stack:
         1 with a real connection (any type), 2 with zero connections by any
         type. Returns None if the movie has no valid next move at all (dead
@@ -287,18 +317,45 @@ class MovieLadder:
             return None
 
         correct_pool = connected
+        blocked_types = []
         if block_series_links:
-            non_mates = connected - self.series_mates(movie_id)
+            blocked_types.append("same_series")
+        if block_director_links:
+            blocked_types.append("same_director")
+        for conn_type in blocked_types:
+            non_mates = correct_pool - self.mates_of_type(movie_id, conn_type)
             if non_mates:
                 correct_pool = non_mates
 
+        preferred = [t for t in self.config["prefer_connection_types"]
+                     if t not in blocked_types]
+        if preferred:
+            wanted = set()
+            for conn_type in preferred:
+                wanted |= self.mates_of_type(movie_id, conn_type)
+            preferred_pool = correct_pool & wanted
+            if preferred_pool:
+                correct_pool = preferred_pool
+
         correct_id = rng.choice(sorted(correct_pool))
+
+        decoy_exclude = exclude | connected | {correct_id}
+        decoy_source = self._pool
+        if self.config["match_decoy_recognizability"]:
+            rank = self._rank.get(correct_id, 0)
+            lo = max(0, rank - DECOY_RANK_WINDOW)
+            hi = min(len(self._pool_by_sitelinks), rank + DECOY_RANK_WINDOW + 1)
+            neighbours = [i for i in self._pool_by_sitelinks[lo:hi] if i not in decoy_exclude]
+            if len(neighbours) >= 2:
+                decoy_source = neighbours
 
         decoys = []
         attempts = 0
         while len(decoys) < 2 and attempts < max_attempts:
             attempts += 1
-            candidate = self.random_movie(rng, exclude=exclude | connected | set(decoys) | {correct_id})
+            candidate = rng.choice(decoy_source)
+            if candidate in decoy_exclude or candidate in decoys:
+                continue
             decoys.append(candidate)
 
         if len(decoys) < 2:

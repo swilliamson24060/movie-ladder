@@ -70,6 +70,13 @@ const BET_LOSS_PENALTY_MULTIPLIER = 2;
 // connections are franchise-mates, the round is still built (see
 // buildRound's blockSeriesLinks) rather than dead-ending the run.
 const MAX_SERIES_LINKS_PER_FLOOR = 2;
+// Same idea for directors, added 2026-08-08 alongside easy mode's
+// director/franchise bias. The bias deliberately makes director links
+// common (they're far easier to spot than a shared cast member), which
+// without a cap would let a floor walk one filmography -- the same
+// repetitive shape the franchise cap exists to prevent. 2 keeps a floor
+// mixed: roughly two "same director" picks and two cast picks.
+const MAX_DIRECTOR_LINKS_PER_FLOOR = 2;
 
 function floorNumberFor(floorsCompleted: number): number {
   return floorsCompleted + 1; // 1-indexed: the floor currently in progress
@@ -125,6 +132,9 @@ interface SavedGame {
   // the cap shipped, in which case the current floor just starts its
   // allowance over -- not worth a SAVE_VERSION bump (and a discarded run).
   groupSeriesLinks?: number;
+  // Director hops used this floor; see MAX_DIRECTOR_LINKS_PER_FLOOR.
+  // Optional for the same reason as groupSeriesLinks.
+  groupDirectorLinks?: number;
   // Movies that reached the ladder because the player MISSED the round --
   // the correct answer is auto-placed either way (section 5b), so the chain
   // alone can't tell a solved rung from a handed-to-you one. Only the
@@ -378,6 +388,9 @@ function GameScreen({
   const [groupSeriesLinks, setGroupSeriesLinks] = useState(
     () => savedGame?.groupSeriesLinks ?? 0
   );
+  const [groupDirectorLinks, setGroupDirectorLinks] = useState(
+    () => savedGame?.groupDirectorLinks ?? 0
+  );
   // Which placed movies came from a wrong pick -- drives the ✓/✗ marks in
   // the chain review. Never reset by a milestone clear (like `history`),
   // only by restart().
@@ -468,6 +481,7 @@ function GameScreen({
       groupHadStrike,
       groupCorrectCount,
       groupSeriesLinks,
+      groupDirectorLinks,
       missedIds: [...missedIds],
       floorScore,
       floorHadNoStrikes,
@@ -493,6 +507,7 @@ function GameScreen({
     groupHadStrike,
     groupCorrectCount,
     groupSeriesLinks,
+    groupDirectorLinks,
     missedIds,
     floorScore,
     floorHadNoStrikes,
@@ -618,6 +633,7 @@ function GameScreen({
     // the ladder either way, and it's the placed chain that would look like
     // a franchise marathon.
     const thisGroupSeriesLinks = groupSeriesLinks + ('same_series' in matches ? 1 : 0);
+    const thisGroupDirectorLinks = groupDirectorLinks + ('same_director' in matches ? 1 : 0);
 
     // Every wrong answer on a bet floor costs double this floor's per-tile
     // value -- including ones after the bet is already unwinnable, since the
@@ -680,11 +696,13 @@ function GameScreen({
       setGroupHadStrike(false);
       setGroupCorrectCount(0);
       setGroupSeriesLinks(0);
+      setGroupDirectorLinks(0);
       setFloorsCompleted((n) => n + 1);
     } else {
       setGroupHadStrike(thisGroupHadStrike);
       setGroupCorrectCount(thisGroupCorrectCount);
       setGroupSeriesLinks(thisGroupSeriesLinks);
+      setGroupDirectorLinks(thisGroupDirectorLinks);
     }
 
     if (newStrikes >= MAX_STRIKES) {
@@ -705,7 +723,7 @@ function GameScreen({
       setRound(null);
       setMilestone(true);
     } else {
-      setRound(nextRound(correctId, newHistory, thisGroupSeriesLinks));
+      setRound(nextRound(correctId, newHistory, thisGroupSeriesLinks, thisGroupDirectorLinks));
     }
   }
 
@@ -733,7 +751,7 @@ function GameScreen({
         setBetBlocked(true);
       } else {
         // A completed floor resets the franchise allowance.
-        setRound(nextRound(topId, history, 0));
+        setRound(nextRound(topId, history, 0, 0));
       }
     });
   }
@@ -741,12 +759,12 @@ function GameScreen({
   function resolveBetOffer(accepted: boolean) {
     setBetOffer(false);
     setIsBetFloor(accepted);
-    setRound(nextRound(stack[stack.length - 1], history, groupSeriesLinks));
+    setRound(nextRound(stack[stack.length - 1], history, groupSeriesLinks, groupDirectorLinks));
   }
 
   function continueAfterBetBlocked() {
     setBetBlocked(false);
-    setRound(nextRound(stack[stack.length - 1], history, groupSeriesLinks));
+    setRound(nextRound(stack[stack.length - 1], history, groupSeriesLinks, groupDirectorLinks));
   }
 
   function restart() {
@@ -754,7 +772,7 @@ function GameScreen({
     const startHistory = new Set([startId]);
     setStack([startId]);
     setHistory(startHistory);
-    setRound(nextRound(startId, startHistory, 0));
+    setRound(nextRound(startId, startHistory, 0, 0));
     setPendingResult(null);
     setMilestone(false);
     setScore(0);
@@ -762,6 +780,7 @@ function GameScreen({
     setGroupHadStrike(false);
     setGroupCorrectCount(0);
     setGroupSeriesLinks(0);
+    setGroupDirectorLinks(0);
     setMissedIds(new Set());
     setFloorScore(0);
     setFloorHadNoStrikes(false);
@@ -790,9 +809,15 @@ function GameScreen({
    * new count in the same tick that they build the round -- reading state
    * there would use the pre-update value.
    */
-  function nextRound(movieId: number, exclude: Set<number>, seriesLinks: number): Round | null {
+  function nextRound(
+    movieId: number,
+    exclude: Set<number>,
+    seriesLinks: number,
+    directorLinks: number
+  ): Round | null {
     return engine.buildRound(movieId, exclude, {
       blockSeriesLinks: seriesLinks >= MAX_SERIES_LINKS_PER_FLOOR,
+      blockDirectorLinks: directorLinks >= MAX_DIRECTOR_LINKS_PER_FLOOR,
     });
   }
 

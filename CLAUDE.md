@@ -726,17 +726,37 @@ types, no hint. **The modes deliberately change only which rounds get
 built** — scoring, strikes, floors and betting are identical in both, so
 none of section 5b's economy needed touching.
 
-**Measurement that killed an obvious assumption, worth not re-deriving:**
-decoys are currently drawn uniformly at random from the whole pool
-(`randomMovie(decoyExclude)` in `movieLadder.ts`), which looks like it
-should let a player win by picking whichever of the 3 candidates they've
-heard of. Simulated 400 real rounds against the shipped data: the correct
-answer is the single most-recognizable of the three **34%** of the time vs.
-**33%** by chance. So that tell does **not** exist today. The reason this
-matters: it's easy to *introduce* it accidentally — e.g. by restricting
-only the correct answer to well-known films while leaving decoys uniform.
-Any recognizability filter must apply to the whole round (current movie,
-correct answer, and both decoys) for exactly this reason.
+**The recognizability tell — an earlier measurement here was WRONG, and the
+correction is the useful part.** This section used to state that picking
+whichever candidate you've heard of doesn't help, citing 400 simulated
+rounds where the correct answer was the most recognizable of the three 34%
+of the time against a 33% chance baseline. At 4,000 rounds the real figure
+is **41–44% strictly most-famous vs 21–23% strictly least** — a substantial,
+exploitable tell that existed in regular mode all along. The 400-round
+sample was simply too small; the effect is ~3 standard errors out, so it
+read as noise.
+
+The cause is structural, not a bug in round-building: a movie's connections
+skew towards well-documented (hence well-known) films, while decoys drawn
+uniformly come from a pool whose median is far lower. Anything that makes
+the correct answer *more* selective — easy's director bias, for instance —
+widens the gap further (it hit 40% in easy the moment the bias landed).
+
+**Fixed by `matchDecoyRecognizability`**, on in both modes: decoys are drawn
+from the correct answer's sitelink-**rank** neighbourhood
+(`DECOY_RANK_WINDOW = 200`) rather than uniformly. Matching by rank rather
+than by sitelink *value* is essential and was got wrong first time — the
+pool is right-skewed, so a value band like 0.6x–1.7x around a famous film
+still contains mostly less-famous films and left the tell at 41%. Rank
+neighbourhoods are symmetric by construction. After the fix: easy 23%/16%,
+regular 7%/6%, both effectively unexploitable.
+
+Two side effects worth knowing. Matched decoys are similarly well known, so
+a player can no longer eliminate a candidate purely for being unheard-of —
+that makes regular slightly harder as well as fairer, and it's a one-line
+revert (`matchDecoyRecognizability: false`). And it delivers option 4 from
+the earlier difficulty list ("make the decoys eliminable") as a by-product,
+since all three candidates now sit at a comparable level.
 
 ### Option 1 — recognizability filter on the movie pool (data side DONE)
 
@@ -876,6 +896,42 @@ would make chains director-heavy and repetitive.
 A side benefit of preference-ordering: `pickHintType` is now deterministic,
 so `TutorialScreen` calls the real function instead of reimplementing the
 rule, and the tutorial can't teach a hint the game wouldn't show.
+
+### Option 5 — bias easy toward director/franchise links (built 2026-08-08)
+
+The lever the earlier notes flagged as untried, built after testers said
+easy was still too hard. `MODE_CONFIG.preferConnectionTypes` steers easy's
+correct answer towards `same_director`/`same_series` when the current movie
+offers a choice; regular's list is empty and it's unaffected.
+
+Three separate problems, one change:
+1. **Difficulty.** Knowing who directed a film is ordinary knowledge;
+   recalling its full cast list isn't. Measured earlier: easy candidates
+   were already famous (median 39 sitelinks) and the connecting person
+   prolific (median 33 films), so the difficulty was never obscurity — it
+   was the *kind* of recall cast connections demand.
+2. **The useless hint.** 93% of easy hints said "a cast member."
+3. **Uncredited roles.** A director credit can't be a walk-on, so this
+   sidesteps the Harrison Ford class of bad connection entirely — which
+   matters because section 6 establishes there is *no* data-side fix for it.
+
+Result, over 10,000 rounds per mode: easy rounds using a director link go
+**5% → 46%**, franchise 21%, and the hint now reads "a director" 46% of the
+time instead of 7%. Regular is unchanged (5% director). Zero invariant
+failures in either mode.
+
+**`MAX_DIRECTOR_LINKS_PER_FLOOR = 2`** accompanies it, mirroring the
+franchise cap: the bias makes director links common, and without a cap a
+floor would walk one filmography — the same repetitive shape the franchise
+cap exists to prevent. Both caps are preferences with fallbacks, so a floor
+still gets built when only capped options remain (measured: 8 floors per
+2,500 exceed the director cap that way, 1–3 the franchise cap).
+
+Steering also **introduced the recognizability tell** described at the top
+of this section, by pulling the correct answer towards famous films. That's
+what forced `matchDecoyRecognizability` — the two changes have to ship
+together, and anyone re-tuning `preferConnectionTypes` should re-measure the
+tell afterwards rather than assume it stayed closed.
 
 ### Shared plumbing (built 2026-08-08)
 
