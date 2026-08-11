@@ -77,6 +77,14 @@ const MAX_SERIES_LINKS_PER_FLOOR = 2;
 // repetitive shape the franchise cap exists to prevent. 2 keeps a floor
 // mixed: roughly two "same director" picks and two cast picks.
 const MAX_DIRECTOR_LINKS_PER_FLOOR = 2;
+// Chapters (2026-08-08). Every FLOORS_PER_CHAPTER floors the run pauses,
+// pays a bonus for unused strikes, and offers to start a fresh chain from
+// an unconnected movie. Score and strikes both carry over -- a new chain
+// does NOT restore lives, so 5 strikes still ends the run however many
+// chapters deep the player is. The floor counter keeps escalating across
+// chains too, so per-tile value keeps climbing (floor 5 = 25/tile).
+const FLOORS_PER_CHAPTER = 4;
+const POINTS_PER_REMAINING_STRIKE = 2;
 
 function floorNumberFor(floorsCompleted: number): number {
   return floorsCompleted + 1; // 1-indexed: the floor currently in progress
@@ -137,6 +145,14 @@ interface SavedGame {
   groupDirectorLinks?: number;
   // Non-US movies placed this floor; see MODE_CONFIG.maxNonUSPerFloor.
   groupNonUS?: number;
+  // True while the end-of-chapter screen is showing, so a reload returns to
+  // it rather than skipping the decision. Optional: absent in saves written
+  // before chapters shipped.
+  chapterPause?: boolean;
+  // Movies that began a chain (including the run's first). The chain review
+  // draws a break before each, so a new chain never looks like a connection
+  // that isn't there.
+  chainStarts?: number[];
   // Movies that reached the ladder because the player MISSED the round --
   // the correct answer is auto-placed either way (section 5b), so the chain
   // alone can't tell a solved rung from a handed-to-you one. Only the
@@ -394,6 +410,10 @@ function GameScreen({
     () => savedGame?.groupDirectorLinks ?? 0
   );
   const [groupNonUS, setGroupNonUS] = useState(() => savedGame?.groupNonUS ?? 0);
+  const [chapterPause, setChapterPause] = useState(() => savedGame?.chapterPause ?? false);
+  const [chainStarts, setChainStarts] = useState<Set<number>>(
+    () => new Set(savedGame?.chainStarts ?? [stack[0]])
+  );
   // Which placed movies came from a wrong pick -- drives the ✓/✗ marks in
   // the chain review. Never reset by a milestone clear (like `history`),
   // only by restart().
@@ -486,6 +506,8 @@ function GameScreen({
       groupSeriesLinks,
       groupDirectorLinks,
       groupNonUS,
+      chapterPause,
+      chainStarts: [...chainStarts],
       missedIds: [...missedIds],
       floorScore,
       floorHadNoStrikes,
@@ -513,6 +535,8 @@ function GameScreen({
     groupSeriesLinks,
     groupDirectorLinks,
     groupNonUS,
+    chapterPause,
+    chainStarts,
     missedIds,
     floorScore,
     floorHadNoStrikes,
@@ -577,6 +601,7 @@ function GameScreen({
   function quit() {
     setPendingResult(null);
     setMilestone(false);
+    setChapterPause(false);
     setBetOffer(false);
     setBetBlocked(false);
     setIsBetFloor(false);
@@ -741,6 +766,11 @@ function GameScreen({
     // setters called from that delayed callback were observed not to take
     // effect reliably on web (useNativeDriver falls back to a JS/rAF-driven
     // animation there). Capturing a plain boolean here sidesteps it.
+    // A chapter boundary takes precedence over the bet offer: the player is
+    // being asked whether to continue at all, so offering a bet on a floor
+    // they might not play would be premature. Decided synchronously for the
+    // same reason offerBet is -- see the note below.
+    const chapterDone = floorsCompleted % FLOORS_PER_CHAPTER === 0;
     const offerBet = floorsCompleted > FLOORS_BEFORE_BETTING;
     const canBet = MAX_STRIKES - strikes >= MIN_STRIKES_LEFT_TO_BET;
     Animated.timing(slideAnim, {
@@ -753,7 +783,9 @@ function GameScreen({
       setMilestone(false);
       slideAnim.setValue(0);
 
-      if (offerBet && canBet) {
+      if (chapterDone) {
+        setChapterPause(true);
+      } else if (offerBet && canBet) {
         setBetOffer(true);
       } else if (offerBet) {
         setBetBlocked(true);
@@ -779,6 +811,40 @@ function GameScreen({
    * rather than stacking on it, so the ladder never shows two adjacent
    * tiles with no link between them.
    */
+  /** Points banked at a chapter end for strikes the player still has. */
+  const chapterBonus = (MAX_STRIKES - strikes) * POINTS_PER_REMAINING_STRIKE;
+
+  /**
+   * Bank the chapter bonus and start a fresh chain from an unconnected
+   * movie. Deliberately does NOT restore strikes -- 5 still ends the run
+   * however many chapters deep the player is -- and the floor counter keeps
+   * climbing, so the new chain's tiles are worth more than the last one's.
+   *
+   * The new movie replaces the board entirely rather than stacking onto the
+   * old chain, and is recorded in chainStarts so the chain review shows a
+   * break instead of implying a connection across it.
+   */
+  function startNewChain() {
+    setScore((s) => s + chapterBonus);
+    setChapterPause(false);
+    const startId = engine.randomStartMovie(50, history);
+    const newHistory = new Set(history);
+    newHistory.add(startId);
+    setStack([startId]);
+    setHistory(newHistory);
+    setChainStarts((prev) => new Set(prev).add(startId));
+    setRound(nextRound(startId, newHistory, 0, 0, 0));
+  }
+
+  /** Bank the bonus and end the run here, going through the normal game-over
+   * path so a qualifying score still gets its submit prompt. */
+  function bankAndEndRun() {
+    setScore((s) => s + chapterBonus);
+    setChapterPause(false);
+    setRound(null);
+    setGameOver(true);
+  }
+
   function continueFromDeadEnd() {
     const startId = engine.randomStartMovie();
     const newStack = [...stack.slice(0, -1), startId];
@@ -809,6 +875,8 @@ function GameScreen({
     setGroupSeriesLinks(0);
     setGroupDirectorLinks(0);
     setGroupNonUS(0);
+    setChapterPause(false);
+    setChainStarts(new Set([startId]));
     setMissedIds(new Set());
     setFloorScore(0);
     setFloorHadNoStrikes(false);
@@ -934,6 +1002,36 @@ function GameScreen({
               <Text style={styles.buttonText}>CONTINUE ▶</Text>
             </Pressable>
           </View>
+        ) : chapterPause ? (
+          <View style={styles.milestoneBanner}>
+            <Text style={styles.milestoneText}>
+              🎉 {FLOORS_PER_CHAPTER} FLOORS COMPLETE!
+            </Text>
+            <Text style={styles.milestoneScore}>
+              +{chapterBonus} bonus — {MAX_STRIKES - strikes} strike
+              {MAX_STRIKES - strikes === 1 ? '' : 's'} left ×{' '}
+              {POINTS_PER_REMAINING_STRIKE}
+            </Text>
+            <Text style={styles.betLine}>Bank these points and continue with a new chain?</Text>
+            <Text style={styles.betLine}>
+              A new chain starts from a fresh movie. Your score carries over and
+            </Text>
+            <Text style={styles.betLine}>
+              tiles keep climbing in value — but strikes do NOT reset.
+            </Text>
+            <Pressable style={styles.button} onPress={startNewChain}>
+              <Text style={styles.buttonText}>BANK &amp; CONTINUE ▶</Text>
+            </Pressable>
+            <Pressable style={styles.buttonSecondaryFull} onPress={bankAndEndRun}>
+              <Text style={styles.buttonSecondaryText}>BANK &amp; END RUN</Text>
+            </Pressable>
+            {/* The run is already saved -- every state change re-persists it
+                (see the autosave effect) -- so this is a reassurance, not an
+                action. Leaving the tab now resumes right here. */}
+            <Text style={styles.chapterSavedNote}>
+              Progress is saved automatically — you can close this and pick up here later.
+            </Text>
+          </View>
         ) : betOffer ? (
           <View style={styles.milestoneBanner}>
             <Text style={styles.milestoneText}>💰 WANT TO BET?</Text>
@@ -1053,6 +1151,7 @@ function GameScreen({
           engine={engine}
           history={history}
           missedIds={missedIds}
+          chainStarts={chainStarts}
           onClose={() => setShowChain(false)}
         />
       )}
@@ -1142,6 +1241,7 @@ function ConnectionChainModal({
   engine,
   history,
   missedIds,
+  chainStarts,
   onClose,
 }: {
   game: MovieLadder;
@@ -1154,6 +1254,9 @@ function ConnectionChainModal({
   /** Placed movies the player got wrong; everything else after the first
    * was picked correctly. See SavedGame.missedIds. */
   missedIds: Set<number>;
+  /** Movies that began a chain. A new chain isn't connected to the movie
+   * before it, so the review shows a break rather than a connection line. */
+  chainStarts: Set<number>;
   onClose: () => void;
 }) {
   // `history` is a Set, but insertion order is exactly this run's chain
@@ -1178,8 +1281,13 @@ function ConnectionChainModal({
             {chain.map((id, i) => {
               const movie = game.movie(id);
               const nextId = chain[i + 1];
+              // No connection line into a movie that started a new chain --
+              // it genuinely isn't linked to the one before it.
+              const nextStartsChain = nextId !== undefined && chainStarts.has(nextId);
               const matchLines =
-                nextId !== undefined ? formatMatches(engine.connectionsBetween(id, nextId)) : [];
+                nextId !== undefined && !nextStartsChain
+                  ? formatMatches(engine.connectionsBetween(id, nextId))
+                  : [];
               // The run's opening movie was placed for the player, so it's
               // neither right nor wrong -- everything after it was either
               // picked correctly or auto-placed after a miss.
@@ -1208,6 +1316,12 @@ function ConnectionChainModal({
                       </Text>
                     </View>
                   </View>
+                  {nextStartsChain && (
+                    <View style={styles.chainLinkRow}>
+                      <Text style={styles.chainLinkLine}>┄</Text>
+                      <Text style={styles.chainBreak}>new chain</Text>
+                    </View>
+                  )}
                   {matchLines.length > 0 && (
                     <View style={styles.chainLinkRow}>
                       <Text style={styles.chainLinkLine}>│</Text>
@@ -1702,6 +1816,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     paddingVertical: 2,
+  },
+  chapterSavedNote: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  chainBreak: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontStyle: 'italic',
+    flex: 1,
   },
   chainSummary: {
     color: colors.textSecondary,

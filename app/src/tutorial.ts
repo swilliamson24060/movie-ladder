@@ -258,7 +258,7 @@ const COPY: CopyBook = {
   },
   done: {
     body:
-      'Miss 5 times total and the run ends. From there: your score is checked against the leaderboard, you can review the full connection chain you built, or start a new run.\n\nThat’s the idea! Tap 🔗 VIEW CONNECTION CHAIN any time during a real run to review your path like this again.',
+      'Clear 4 floors and the run pauses: you bank 2 points for every strike you have left, then choose whether to keep going on a brand new chain. Your score and floor value carry over — your strikes do not reset.\n\nMiss 5 times total and the run ends. From there: your score is checked against the leaderboard, you can review the full connection chain you built, or start a new run.\n\nThat’s the idea! Tap 🔗 VIEW CONNECTION CHAIN any time during a real run to review your path like this again.',
     button: 'START PLAYING',
   },
 };

@@ -421,6 +421,48 @@ load and discards the save rather than showing wrong movies (see section
 9's save-game entry). Leaderboard scores are unaffected — they store names
 and scores, not movie IDs.
 
+**Chapters — a checkpoint every 4 floors (decided/built 2026-08-08).** The
+floor mechanic is unchanged; this sits on top of it. Every
+`FLOORS_PER_CHAPTER = 4` completed floors the run pauses and offers a
+decision, instead of rolling straight into the next floor's bet offer (the
+chapter check deliberately takes precedence — asking for a bet on a floor
+the player may not play would be premature).
+
+- **Bonus:** `POINTS_PER_REMAINING_STRIKE = 2` per strike still unused, so
+  a clean run banks +10 and a battered one +2. Small on purpose; it's a
+  pat on the back, not a scoring pillar.
+- **Three outcomes:** BANK & CONTINUE starts a fresh chain, BANK & END RUN
+  goes through the normal game-over path (so a qualifying score still gets
+  its submit prompt), and simply leaving is safe because the autosave
+  already persists the chapter screen itself (`chapterPause` in
+  `SavedGame`) — the on-screen note says so rather than offering a
+  redundant "save" button.
+- **A new chain starts from an unconnected movie**, replacing the board.
+  Score carries over, **the floor counter keeps escalating** (so chain 2
+  opens at floor 5 = 25 points/tile), and **strikes do NOT reset** — 5
+  still ends the run however many chapters deep.
+- `chainStarts` records which movies began a chain, so the chain review
+  draws a "new chain" break instead of implying a connection across it —
+  the same honesty problem the dead-end jump has.
+
+**Repeat headroom, measured before building:** with nothing ever repeating,
+easy supports **48 chapters (192 floors, 768 picks)** and regular **113
+chapters (452 floors)** — both far beyond a survivable run, so repeats are
+a non-issue. New chains prefer an unused start movie but will reuse one
+rather than fail (`randomStartMovie(50, history)`), matching the "one every
+4 floors is fine" tolerance. **Decoys were freed from the history
+exclusion** at the same time: a decoy reappearing is invisible (it was
+never placed on the ladder), and reusing them keeps the pool from thinning
+as a run gets long. `buildRound` now takes `decoyExclude` separately from
+`exclude` for exactly this reason.
+
+**Score inflation is real and worth deciding on.** Simulating full runs at
+90% accuracy: median final score ~2,100 in easy, max ~13,000 — against a
+current live leaderboard whose top entry is 172. Escalating floors across
+chapters is the cause, and it was chosen deliberately, but it means old and
+new scores aren't comparable. Either accept that the boards reset in
+practice, or clear them.
+
 **Betting blocked at 4 strikes, bug fix 2026-08-01.** A bet floor's miss
 still costs its normal 1 strike (see the rework above -- there's no
 separate bet-loss penalty anymore), which meant accepting a bet at

@@ -397,10 +397,11 @@ export class ModeEngine {
     onBoard: Set<number>,
     options: { blockSeriesLinks?: boolean; blockDirectorLinks?: boolean; blockNonUS?: boolean }
   ): Round | null {
+    const decoyExclude = onBoard;
     return (
-      this.buildRound(movieId, history, options) ??
-      this.buildRound(movieId, history, {}) ??
-      this.buildRound(movieId, onBoard, {})
+      this.buildRound(movieId, history, { ...options, decoyExclude }) ??
+      this.buildRound(movieId, history, { decoyExclude }) ??
+      this.buildRound(movieId, onBoard, { decoyExclude })
     );
   }
 
@@ -416,10 +417,19 @@ export class ModeEngine {
    * the movie it was reached from, and that one is in the pool by
    * construction.
    */
-  randomStartMovie(maxAttempts = 50): number {
-    for (let i = 0; i < maxAttempts; i++) {
-      const id = this.randomMovie();
-      if (this.connectedIds(id).size > 0) return id;
+  randomStartMovie(maxAttempts = 50, avoid?: Set<number>): number {
+    // Two passes: first insisting the start is unused, then accepting any
+    // playable movie. A new chain should avoid movies already seen this run
+    // "if possible" -- reusing one occasionally is acceptable and beats
+    // failing to start a chain at all.
+    for (const respectAvoid of [true, false]) {
+      for (let i = 0; i < maxAttempts; i++) {
+        const id = this.randomMovie();
+        if (this.connectedIds(id).size === 0) continue;
+        if (respectAvoid && avoid?.has(id)) continue;
+        return id;
+      }
+      if (!avoid) break;
     }
     return this.randomMovie();
   }
@@ -512,6 +522,15 @@ export class ModeEngine {
       blockSeriesLinks?: boolean;
       blockDirectorLinks?: boolean;
       blockNonUS?: boolean;
+      /**
+       * Movies that must not appear as decoys -- normally just what's
+       * currently on the board. Deliberately separate from `exclude`: that
+       * one grows for the whole run to stop the CHAIN revisiting a movie,
+       * but a decoy reappearing is invisible to the player (it was never
+       * placed), and reusing decoys freely keeps the pool from thinning as
+       * a run gets long.
+       */
+      decoyExclude?: Set<number>;
     },
     maxAttempts = 200
   ): Round | null {
@@ -558,7 +577,10 @@ export class ModeEngine {
     // Decoys: anything in the pool that is NOT connected to the current
     // movie by any of this mode's types. `connected` is exactly the set with
     // >=1 connection, so excluding it is the whole zero-connection guarantee.
-    const decoyExclude = new Set(excludeSet);
+    // Only the current board and this round's own movies are off-limits as
+    // decoys -- not the run's whole history. See the decoyExclude option.
+    const decoyExclude = new Set(options?.decoyExclude ?? []);
+    decoyExclude.add(movieId);
     for (const id of connected) decoyExclude.add(id);
     decoyExclude.add(correctId);
 
