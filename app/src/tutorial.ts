@@ -43,7 +43,7 @@ export const PHASE_ORDER: Phase[] = [
   'done',
 ];
 
-const CONNECTION_LABELS: Record<string, string> = {
+export const CONNECTION_LABELS: Record<string, string> = {
   same_director: 'Same director',
   shared_cast_member: 'Same cast member',
   same_screenwriter: 'Same screenwriter',

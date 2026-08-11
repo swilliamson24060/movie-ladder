@@ -434,6 +434,22 @@ export class ModeEngine {
     return this.randomMovie();
   }
 
+  /**
+   * Everything this movie is on record for, under the types this mode
+   * counts -- its directors, cast, franchise and so on. Used by the
+   * tap-a-tile details view; connectionsBetween answers "why are these two
+   * linked", this answers "what is this movie".
+   */
+  attributesOf(movieId: number): Record<string, string[]> {
+    const out: Record<string, string[]> = {};
+    const byType = this.movieValues.get(movieId);
+    if (!byType) return out;
+    for (const [connType, values] of byType.entries()) {
+      out[connType] = [...values].sort();
+    }
+    return out;
+  }
+
   /** Every connection type/value shared by a and b -- ALL matches, not just the first. */
   connectionsBetween(a: number, b: number): Record<string, string[]> {
     const aValues = this.movieValues.get(a);

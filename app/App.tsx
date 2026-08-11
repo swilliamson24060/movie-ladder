@@ -15,7 +15,7 @@ import {
 import TutorialScreen from './src/TutorialScreen';
 import MovieCell from './src/components/MovieCell';
 import LadderStack, { MAX_BOARD_WIDTH, MAX_STACK_TILES } from './src/components/LadderStack';
-import { formatMatches, roundPrompt } from './src/tutorial';
+import { CONNECTION_LABELS, formatMatches, roundPrompt } from './src/tutorial';
 import { colors } from './src/theme';
 import { fetchTopScores, LeaderboardResult, submitScore, wouldQualify } from './src/leaderboard';
 
@@ -465,6 +465,10 @@ function GameScreen({
   // closing copy ("Tap 🔗 VIEW CONNECTION CHAIN any time during a real
   // run"), which shipped before this button did.
   const [showChain, setShowChain] = useState(false);
+  // Index into `stack` of the placed tile the player tapped for details, or
+  // null. Not persisted -- it's a transient inspection, and a reload
+  // shouldn't reopen someone's tile popup.
+  const [inspectIndex, setInspectIndex] = useState<number | null>(null);
   // True from the moment the player taps QUIT until they dismiss the
   // "Thanks for playing!" modal -- lets that modal own the score-submit UI
   // itself (see the render condition below) instead of also popping the
@@ -967,7 +971,12 @@ function GameScreen({
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <LadderStack movies={stackMovies} slideProgress={slideAnim} />
+        <LadderStack
+          movies={stackMovies}
+          slideProgress={slideAnim}
+          onSelect={(i) => setInspectIndex(i)}
+        />
+        <Text style={styles.boardHint}>Tap a movie on the board for details</Text>
 
         {gameOver ? (
           <View style={styles.milestoneBanner}>
@@ -1145,6 +1154,21 @@ function GameScreen({
         />
       )}
 
+      {inspectIndex !== null && stack[inspectIndex] !== undefined && (
+        <TileInfoModal
+          game={game}
+          engine={engine}
+          movieId={stack[inspectIndex]}
+          // The movie directly below it on the board, if any -- that's the
+          // one it had to connect to, so the modal can show WHY it's there
+          // as well as what it is.
+          previousId={inspectIndex > 0 ? stack[inspectIndex - 1] : null}
+          missed={missedIds.has(stack[inspectIndex])}
+          isChainStart={chainStarts.has(stack[inspectIndex])}
+          onClose={() => setInspectIndex(null)}
+        />
+      )}
+
       {showChain && (
         <ConnectionChainModal
           game={game}
@@ -1227,6 +1251,93 @@ function LeaderboardModal({
               ))}
             </ScrollView>
           )}
+          <Pressable style={styles.button} onPress={onClose}>
+            <Text style={styles.buttonText}>CLOSE</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/**
+ * Details for one movie already placed on the board, opened by tapping its
+ * tile. Answers two questions: what is this movie (its own credits, under
+ * the types this mode counts), and why is it on the ladder (what it shares
+ * with the tile below it).
+ */
+function TileInfoModal({
+  game,
+  engine,
+  movieId,
+  previousId,
+  missed,
+  isChainStart,
+  onClose,
+}: {
+  game: MovieLadder;
+  engine: ModeEngine;
+  movieId: number;
+  previousId: number | null;
+  missed: boolean;
+  isChainStart: boolean;
+  onClose: () => void;
+}) {
+  const movie = game.movie(movieId);
+  // Cast lists run to 50 names on some films (The Twilight Saga: Breaking
+  // Dawn - Part 2), which would bury the rest of the modal, so long lists
+  // are truncated with a count. The connection lines below aren't capped --
+  // those are the shared values between two specific movies and stay short.
+  const MAX_VALUES_SHOWN = 6;
+  const attributes = Object.entries(engine.attributesOf(movieId)).map(([type, values]) => {
+    const shown = values.slice(0, MAX_VALUES_SHOWN).join(', ');
+    const extra = values.length - MAX_VALUES_SHOWN;
+    return `${CONNECTION_LABELS[type] ?? type} — ${shown}${extra > 0 ? ` +${extra} more` : ''}`;
+  });
+  const connection =
+    previousId !== null && !isChainStart
+      ? formatMatches(engine.connectionsBetween(previousId, movieId))
+      : [];
+
+  return (
+    <Modal transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>
+            {movie.title}
+            {movie.year != null ? ` (${movie.year})` : ''}
+          </Text>
+          <ScrollView style={styles.modalScroll}>
+            {isChainStart ? (
+              <Text style={styles.modalLine}>Started a chain — nothing below it to connect to.</Text>
+            ) : previousId !== null ? (
+              <>
+                <Text style={styles.modalLine}>
+                  Connects to {game.movie(previousId).title} by:
+                </Text>
+                {connection.map((line, i) => (
+                  <Text key={i} style={styles.modalLine}>
+                    • {line}
+                  </Text>
+                ))}
+                {missed && (
+                  <Text style={[styles.modalLine, styles.modalStrikes]}>
+                    You missed this one — it was placed for you.
+                  </Text>
+                )}
+              </>
+            ) : null}
+            <Text style={[styles.modalLine, styles.tileInfoHeading]}>On record for:</Text>
+            {attributes.length > 0 ? (
+              attributes.map((line, i) => (
+                <Text key={i} style={styles.modalLine}>
+                  • {line}
+                </Text>
+              ))
+            ) : (
+              <Text style={styles.modalLine}>No credits recorded for this mode’s categories.</Text>
+            )}
+          </ScrollView>
           <Pressable style={styles.button} onPress={onClose}>
             <Text style={styles.buttonText}>CLOSE</Text>
           </Pressable>
@@ -1829,6 +1940,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
     flex: 1,
+  },
+  boardHint: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  tileInfoHeading: {
+    fontWeight: '800',
+    marginTop: 10,
   },
   chainSummary: {
     color: colors.textSecondary,

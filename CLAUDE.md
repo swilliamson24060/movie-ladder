@@ -463,6 +463,36 @@ chapters is the cause, and it was chosen deliberately, but it means old and
 new scores aren't comparable. Either accept that the boards reset in
 practice, or clear them.
 
+**Tap a placed tile for details (2026-08-08).** Chart-ladder has had this
+since commit `572d3ae` (`TileInfoModal.tsx`, plus a "tap a placed tile for
+details" hint); movie-ladder never got it, and the only mention of it in
+this file was in section 11 describing the music game. Now ported:
+`LadderStack` takes an optional `onSelect`, and tapping a placed tile opens
+`TileInfoModal` with
+
+- what the movie *is* — its own credits via the new
+  `ModeEngine.attributesOf()`, mode-scoped so easy never lists a
+  screenwriter it doesn't count, and
+- why it's *there* — what it shares with the tile below it, or a note that
+  it started a chain and has nothing below it to connect to. A tile the
+  player missed says so.
+
+Long value lists are truncated at 6 with a "+N more" count: cast runs to 50
+names on some films (*The Twilight Saga: Breaking Dawn – Part 2*) and would
+otherwise bury the rest of the modal. Connection lines aren't capped —
+those are shared values between two specific movies and stay short.
+
+The tutorial passes no `onSelect`, so its scripted board stays
+non-interactive.
+
+**Board tiles now show the year (2026-08-08)**, starter included.
+`LadderStack` had accepted a `year` since it was written and both callers
+always passed it — it simply never rendered, so a movie showed its year as
+a candidate and lost it the moment it was placed. The year occupies the
+space the title's optional third line used to use, so tile height is
+unchanged; two lines already cover ~99% of titles (p99 is 42 chars), and a
+movie with no year on record still gets all three.
+
 **Betting blocked at 4 strikes, bug fix 2026-08-01.** A bet floor's miss
 still costs its normal 1 strike (see the rework above -- there's no
 separate bet-loss penalty anymore), which meant accepting a bet at

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Animated, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { colors } from '../theme';
 
 /**
@@ -57,6 +57,7 @@ export interface LadderMovie {
 export default function LadderStack({
   movies,
   slideProgress,
+  onSelect,
 }: {
   /** In placement order: movies[0] is the starter (bottom row), the last
    * entry is the most recently placed (highest, furthest right). Extra
@@ -67,6 +68,9 @@ export default function LadderStack({
    * milestone pause) to animate a completed group of 5 clearing off the
    * board. The background grid never moves -- only the tiles layer does. */
   slideProgress?: Animated.Value;
+  /** Called with the index into `movies` when a placed tile is tapped.
+   * Omit to leave tiles non-interactive (the tutorial does). */
+  onSelect?: (index: number) => void;
 }) {
   const { width: windowWidth } = useWindowDimensions();
   const [measuredWidth, setMeasuredWidth] = useState(0);
@@ -117,9 +121,15 @@ export default function LadderStack({
           if (!movie) return null;
           const isTop = i === placed.length - 1;
           const accent = isTop ? colors.green : colors.blue;
+          const Tile = onSelect ? Pressable : View;
           return (
-            <View
+            <Tile
               key={i}
+              // Placed tiles are tappable so a player can check what a movie
+              // on the board actually is -- by the time it's a few rungs
+              // down, "why is that there" is a fair question. Ported from
+              // chart-ladder's TileInfoModal behaviour.
+              onPress={onSelect ? () => onSelect(i) : undefined}
               style={[
                 styles.tile,
                 {
@@ -152,7 +162,7 @@ export default function LadderStack({
                   {movie.year}
                 </Text>
               )}
-            </View>
+            </Tile>
           );
         })}
       </Animated.View>
