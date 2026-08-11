@@ -132,13 +132,26 @@ export default function LadderStack({
                 },
               ]}
             >
-              {/* Up to 3 lines: two lines cover ~99% of titles in films.csv
-                  (p99 length is 42 chars), and the third catches the tail
-                  without overflowing a TILE_ROWS-tall tile. Anything longer
-                  still truncates with an ellipsis. */}
-              <Text numberOfLines={3} style={[styles.tileText, { fontSize }]}>
+              {/* Two lines cover ~99% of titles in films.csv (p99 length is
+                  42 chars); the year takes the third line's worth of space,
+                  so the tile height is unchanged and only the ~1% longest
+                  titles lose their third line to an ellipsis. Titles with no
+                  year on record keep all three lines. */}
+              <Text
+                numberOfLines={movie.year != null ? 2 : 3}
+                style={[styles.tileText, { fontSize }]}
+              >
                 {movie.title}
               </Text>
+              {/* Shown on every placed tile including the starter, so the
+                  board carries the same title+year the candidate tiles do
+                  (MovieCell) rather than the player having to remember the
+                  year once a movie is placed. */}
+              {movie.year != null && (
+                <Text style={[styles.tileYear, { fontSize: Math.max(7, fontSize * 0.72) }]}>
+                  {movie.year}
+                </Text>
+              )}
             </View>
           );
         })}
@@ -188,5 +201,13 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  // Dimmer and lighter than the title so it reads as secondary at a glance,
+  // matching how MovieCell styles the year on the candidate tiles.
+  tileYear: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 1,
   },
 });
