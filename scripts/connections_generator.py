@@ -257,6 +257,15 @@ def main():
                 # unplayable-by-reasoning for a typical player. Not a connection
                 # type and never groups anything; purely a per-movie attribute.
                 "sitelinks": int(sitelinks) if sitelinks else 0,
+                # Shipped so the game can stop a chain wandering into a
+                # cluster of non-US cinema (CLAUDE.md section 5c). Non-US
+                # films already have to earn their place in the pool via the
+                # US-relevance filter below, but that controls WHICH films
+                # exist, not how they chain: a non-US director's filmography
+                # is entirely non-US, so once a chain lands on one it tends
+                # to stay (measured: 31% of hops out of a non-US movie land
+                # on another, vs 4% out of a US movie).
+                "is_us": 1 if "United States" in split_multi(row.get("countries", "")) else 0,
             }
 
             for conn_type, column in MULTI_VALUE_CONNECTIONS.items():
@@ -321,8 +330,8 @@ def main():
     for mid in ordered_movie_ids:
         m = movies[mid]
         movies_array.append([m["title"], m["year"], m["wikidata_id"], m["imdb_id"],
-                             m["sitelinks"]])
-    # movies_array columns, in order: [title, year, wikidata_id, imdb_id, sitelinks]
+                             m["sitelinks"], m["is_us"]])
+    # movies_array columns: [title, year, wikidata_id, imdb_id, sitelinks, is_us]
     # NOTE: sitelinks was appended LAST deliberately (2026-08-08) so existing
     # positional readers of the first four fields keep working unchanged, and
     # so adding it doesn't renumber any movie -- IDs are positions in this
@@ -360,7 +369,7 @@ def main():
             }
 
     result = {
-        "movie_fields": ["title", "year", "wikidata_id", "imdb_id", "sitelinks"],
+        "movie_fields": ["title", "year", "wikidata_id", "imdb_id", "sitelinks", "is_us"],
         "movies": movies_array,
         "connections": final,
     }

@@ -933,6 +933,54 @@ what forced `matchDecoyRecognizability` — the two changes have to ship
 together, and anyone re-tuning `preferConnectionTypes` should re-measure the
 tell afterwards rather than assume it stayed closed.
 
+### Dead ends, and non-US clustering (both fixed 2026-08-08)
+
+Two player reports, both traced to the same underlying shape: the pool is a
+graph, and a chain that never revisits a node eventually runs out of edges.
+
+**Dead ends stranded runs.** `buildRound` returns null when a movie has no
+unused connection left, and the app rendered a bare "Dead end — no valid
+round from this movie" with **no way to continue** — the run was over
+except for quitting. Measured before fixing: **135 of 300 simulated easy
+runs** hit one, median around 191 picks but as early as pick 2. Two fixes:
+
+1. `buildRoundWithFallback` relaxes constraints in order rather than
+   giving up — everything asked for, then caps ignored, then repeats from
+   earlier in the run allowed (excluding only what's on the board). A
+   repeated movie is far better than an ended run, and the chain stays
+   truthful because every link is still a real connection.
+2. When even that fails, the board now offers **"CONTINUE FROM A NEW
+   MOVIE"** instead of a dead screen. Score, strikes and floor progress
+   carry over; the new movie *replaces* the top tile rather than stacking
+   on it, so the ladder never shows two adjacent tiles with no link.
+
+The genuinely unrecoverable case is real but narrow — e.g. *Smurfs: The
+Lost Village* has exactly **2 connections in the whole easy pool**, and
+both were already on the board. Verified after: 0 of 300 runs left
+unplayable in either mode, all completing 400 picks; easy needed a recovery
+in 109 of 300 long runs, regular in 4.
+
+**Non-US movies clustered into whole floors.** The US-relevance filter
+(section 5b) decides *which* non-US films are in the pool — they must
+connect to a US film or have won a major award — but says nothing about how
+they **chain**, and they cluster hard: a hop out of a non-US movie lands on
+another non-US movie **31%** of the time versus **4%** out of a US movie,
+because a non-US director's filmography and cast pool are themselves
+non-US. Same stickiness shape as the Bond franchise problem.
+
+Worth noting the floor raise did *not* cause this — non-US share actually
+falls as the floor rises (35.5% of the full pool, 16.8% at ≥30, 13.8% at
+≥40). The director bias made it more visible, since a director link keeps a
+chain inside one filmography by construction.
+
+Fixed with `maxNonUSPerFloor` (easy: 2, regular: 0 = uncapped, since
+regular's pool is 35% non-US by design and capping would distort the mode
+rather than fix a complaint about it). This needed a new **`is_us`** field
+in `connections.json` — appended last, so movie IDs are unchanged and saved
+games survive (verified: 0 rows shifted, 0 connection groups changed).
+Measured after: 33 of 22,820 easy floors exceed 2 non-US movies, all via
+the documented fallback.
+
 ### Shared plumbing (built 2026-08-08)
 
 - **Leaderboard separation — one collection per mode**, not a `mode` field.

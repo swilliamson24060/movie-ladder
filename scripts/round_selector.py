@@ -108,6 +108,13 @@ MODE_CONFIG = {
         # shared cast member, and can't be an uncredited walk-on.
         "prefer_connection_types": ["same_director", "same_series"],
         "match_decoy_recognizability": True,
+        # Cap non-US movies per floor. The US-relevance filter in
+        # connections_generator.py decides WHICH non-US films are in the pool;
+        # this controls how they CHAIN. They cluster hard -- a hop out of a
+        # non-US movie lands on another 31% of the time vs 4% out of a US one,
+        # because non-US directors' and casts' filmographies are themselves
+        # non-US -- so a chain that wanders in tends to stay for a whole floor.
+        "max_non_us_per_floor": 2,
     },
     "regular": {
         "min_sitelinks": 0,
@@ -115,6 +122,9 @@ MODE_CONFIG = {
         "hint": False,
         "prefer_connection_types": [],
         "match_decoy_recognizability": True,
+        # No cap: regular's pool is 35% non-US by design, so capping would
+        # distort the mode rather than fix a complaint about it.
+        "max_non_us_per_floor": 0,
     },
 }
 
@@ -177,6 +187,7 @@ class MovieLadder:
         # Movie IDs playable in this mode. Regular's floor is 0, so this is
         # every movie; easy's floor drops it to the recognizable subset.
         sitelinks_idx = self.movie_fields.index("sitelinks")
+        self._is_us_idx = self.movie_fields.index("is_us")
         floor = self.config["min_sitelinks"]
         self._pool = [i for i, row in enumerate(self.movies) if row[sitelinks_idx] >= floor]
         self._pool_set = set(self._pool)
@@ -281,6 +292,20 @@ class MovieLadder:
                 return preferred
         return sorted(hintable)[0]
 
+    def is_us(self, movie_id):
+        return bool(self.movies[movie_id][self._is_us_idx])
+
+    def build_round_with_fallback(self, movie_id, history, on_board, rng=None, **opts):
+        """Build a round, relaxing constraints in order rather than
+        dead-ending: everything asked for, then caps ignored, then repeats
+        from earlier in the run allowed (excluding only what's on the board).
+        Returns None only if this movie has no playable connection at all --
+        the caller should then continue from a fresh movie rather than leave
+        the player stuck. Mirrors buildRoundWithFallback in movieLadder.ts."""
+        return (self.build_round(movie_id, rng=rng, exclude=history, **opts)
+                or self.build_round(movie_id, rng=rng, exclude=history)
+                or self.build_round(movie_id, rng=rng, exclude=on_board))
+
     def mates_of_type(self, movie_id, conn_type):
         """Every movie in the pool sharing a connection of one type with this
         one. Used both to cap hops of a type and to steer towards one.
@@ -296,7 +321,8 @@ class MovieLadder:
         return self.mates_of_type(movie_id, "same_series")
 
     def build_round(self, movie_id, rng=None, exclude=None, max_attempts=200,
-                    block_series_links=False, block_director_links=False):
+                    block_series_links=False, block_director_links=False,
+                    block_non_us=False):
         """Build a 3-candidate round for the movie on top of the stack:
         1 with a real connection (any type), 2 with zero connections by any
         type. Returns None if the movie has no valid next move at all (dead
@@ -317,6 +343,11 @@ class MovieLadder:
             return None
 
         correct_pool = connected
+        if block_non_us:
+            us_only = {i for i in correct_pool if self.is_us(i)}
+            if us_only:
+                correct_pool = us_only
+
         blocked_types = []
         if block_series_links:
             blocked_types.append("same_series")

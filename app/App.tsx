@@ -135,6 +135,8 @@ interface SavedGame {
   // Director hops used this floor; see MAX_DIRECTOR_LINKS_PER_FLOOR.
   // Optional for the same reason as groupSeriesLinks.
   groupDirectorLinks?: number;
+  // Non-US movies placed this floor; see MODE_CONFIG.maxNonUSPerFloor.
+  groupNonUS?: number;
   // Movies that reached the ladder because the player MISSED the round --
   // the correct answer is auto-placed either way (section 5b), so the chain
   // alone can't tell a solved rung from a handed-to-you one. Only the
@@ -391,6 +393,7 @@ function GameScreen({
   const [groupDirectorLinks, setGroupDirectorLinks] = useState(
     () => savedGame?.groupDirectorLinks ?? 0
   );
+  const [groupNonUS, setGroupNonUS] = useState(() => savedGame?.groupNonUS ?? 0);
   // Which placed movies came from a wrong pick -- drives the ✓/✗ marks in
   // the chain review. Never reset by a milestone clear (like `history`),
   // only by restart().
@@ -482,6 +485,7 @@ function GameScreen({
       groupCorrectCount,
       groupSeriesLinks,
       groupDirectorLinks,
+      groupNonUS,
       missedIds: [...missedIds],
       floorScore,
       floorHadNoStrikes,
@@ -508,6 +512,7 @@ function GameScreen({
     groupCorrectCount,
     groupSeriesLinks,
     groupDirectorLinks,
+    groupNonUS,
     missedIds,
     floorScore,
     floorHadNoStrikes,
@@ -634,6 +639,7 @@ function GameScreen({
     // a franchise marathon.
     const thisGroupSeriesLinks = groupSeriesLinks + ('same_series' in matches ? 1 : 0);
     const thisGroupDirectorLinks = groupDirectorLinks + ('same_director' in matches ? 1 : 0);
+    const thisGroupNonUS = groupNonUS + (game.isUS(correctId) ? 0 : 1);
 
     // Every wrong answer on a bet floor costs double this floor's per-tile
     // value -- including ones after the bet is already unwinnable, since the
@@ -697,12 +703,14 @@ function GameScreen({
       setGroupCorrectCount(0);
       setGroupSeriesLinks(0);
       setGroupDirectorLinks(0);
+      setGroupNonUS(0);
       setFloorsCompleted((n) => n + 1);
     } else {
       setGroupHadStrike(thisGroupHadStrike);
       setGroupCorrectCount(thisGroupCorrectCount);
       setGroupSeriesLinks(thisGroupSeriesLinks);
       setGroupDirectorLinks(thisGroupDirectorLinks);
+      setGroupNonUS(thisGroupNonUS);
     }
 
     if (newStrikes >= MAX_STRIKES) {
@@ -723,7 +731,7 @@ function GameScreen({
       setRound(null);
       setMilestone(true);
     } else {
-      setRound(nextRound(correctId, newHistory, thisGroupSeriesLinks, thisGroupDirectorLinks));
+      setRound(nextRound(correctId, newHistory, thisGroupSeriesLinks, thisGroupDirectorLinks, thisGroupNonUS));
     }
   }
 
@@ -751,7 +759,7 @@ function GameScreen({
         setBetBlocked(true);
       } else {
         // A completed floor resets the franchise allowance.
-        setRound(nextRound(topId, history, 0, 0));
+        setRound(nextRound(topId, history, 0, 0, 0));
       }
     });
   }
@@ -759,12 +767,31 @@ function GameScreen({
   function resolveBetOffer(accepted: boolean) {
     setBetOffer(false);
     setIsBetFloor(accepted);
-    setRound(nextRound(stack[stack.length - 1], history, groupSeriesLinks, groupDirectorLinks));
+    setRound(nextRound(stack[stack.length - 1], history, groupSeriesLinks, groupDirectorLinks, groupNonUS));
+  }
+
+  /**
+   * Recover from the one dead end buildRoundWithFallback can't solve (a
+   * movie whose only connection is where it came from). Starts a fresh
+   * chain segment from a new movie, keeping score, strikes and floor
+   * progress -- the run continues, it just doesn't pretend the new movie is
+   * connected to the old one. The new movie replaces the top of the board
+   * rather than stacking on it, so the ladder never shows two adjacent
+   * tiles with no link between them.
+   */
+  function continueFromDeadEnd() {
+    const startId = engine.randomStartMovie();
+    const newStack = [...stack.slice(0, -1), startId];
+    const newHistory = new Set(history);
+    newHistory.add(startId);
+    setStack(newStack);
+    setHistory(newHistory);
+    setRound(nextRound(startId, newHistory, groupSeriesLinks, groupDirectorLinks, groupNonUS));
   }
 
   function continueAfterBetBlocked() {
     setBetBlocked(false);
-    setRound(nextRound(stack[stack.length - 1], history, groupSeriesLinks, groupDirectorLinks));
+    setRound(nextRound(stack[stack.length - 1], history, groupSeriesLinks, groupDirectorLinks, groupNonUS));
   }
 
   function restart() {
@@ -772,7 +799,7 @@ function GameScreen({
     const startHistory = new Set([startId]);
     setStack([startId]);
     setHistory(startHistory);
-    setRound(nextRound(startId, startHistory, 0, 0));
+    setRound(nextRound(startId, startHistory, 0, 0, 0));
     setPendingResult(null);
     setMilestone(false);
     setScore(0);
@@ -781,6 +808,7 @@ function GameScreen({
     setGroupCorrectCount(0);
     setGroupSeriesLinks(0);
     setGroupDirectorLinks(0);
+    setGroupNonUS(0);
     setMissedIds(new Set());
     setFloorScore(0);
     setFloorHadNoStrikes(false);
@@ -813,11 +841,19 @@ function GameScreen({
     movieId: number,
     exclude: Set<number>,
     seriesLinks: number,
-    directorLinks: number
+    directorLinks: number,
+    nonUS: number
   ): Round | null {
-    return engine.buildRound(movieId, exclude, {
+    const maxNonUS = engine.config.maxNonUSPerFloor;
+    // buildRoundWithFallback, not buildRound: a dead end here would strand
+    // the player on a board with no playable move, so constraints get
+    // relaxed in order instead. `stack` is what's currently on the board --
+    // the last thing it will give up is repeating a movie from earlier in
+    // the run, which is far better than ending the run.
+    return engine.buildRoundWithFallback(movieId, exclude, new Set(stack), {
       blockSeriesLinks: seriesLinks >= MAX_SERIES_LINKS_PER_FLOOR,
       blockDirectorLinks: directorLinks >= MAX_DIRECTOR_LINKS_PER_FLOOR,
+      blockNonUS: maxNonUS > 0 && nonUS >= maxNonUS,
     });
   }
 
@@ -969,7 +1005,25 @@ function GameScreen({
                 })}
               </View>
             ) : (
-              <Text style={styles.result}>Dead end — no valid round from this movie.</Text>
+              // Last-resort recovery. buildRoundWithFallback already relaxes
+              // the caps and then the no-repeat rule, so reaching here means
+              // this movie's only connection is the one it was reached from
+              // -- rare, but it used to strand the run on an unplayable board
+              // with no way forward except quitting. The run continues from a
+              // fresh movie instead; score, strikes and floor progress are
+              // untouched, and the chain records the jump honestly rather
+              // than implying a connection that isn't there.
+              <View style={styles.milestoneBanner}>
+                <Text style={styles.milestoneText}>🔀 NO WAY ONWARD</Text>
+                <Text style={styles.betLine}>
+                  {game.movie(currentId).title} has no connections left that
+                </Text>
+                <Text style={styles.betLine}>haven’t already been used this run.</Text>
+                <Text style={styles.betLine}>Your score and strikes carry over.</Text>
+                <Pressable style={styles.button} onPress={continueFromDeadEnd}>
+                  <Text style={styles.buttonText}>CONTINUE FROM A NEW MOVIE ▶</Text>
+                </Pressable>
+              </View>
             )}
           </>
         )}

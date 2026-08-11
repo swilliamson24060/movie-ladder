@@ -15,8 +15,8 @@
  * restrictions on top of that single mechanic -- see MODE_CONFIG.
  */
 
-export type MovieRow = [string, number | null, string, string | null, number];
-// [title, year, wikidata_id, imdb_id, sitelinks]
+export type MovieRow = [string, number | null, string, string | null, number, number];
+// [title, year, wikidata_id, imdb_id, sitelinks, is_us]
 //
 // sitelinks (Wikipedia language-edition count) is a recognizability proxy
 // carried through from films.csv, added 2026-08-08 for the difficulty modes
@@ -105,6 +105,22 @@ export interface ModeConfig {
    * to false for regular to restore the old behaviour.
    */
   matchDecoyRecognizability: boolean;
+  /**
+   * Cap on how many non-US movies a single floor may contain, or 0 for no
+   * cap. The US-relevance filter in connections_generator.py already
+   * decides WHICH non-US films are in the pool at all (they must connect to
+   * a US film or have won a major award), but that doesn't control how they
+   * CHAIN -- and they cluster hard, because a non-US director's filmography
+   * and cast pool are themselves non-US. Measured in easy: a hop out of a
+   * non-US movie lands on another non-US movie 31% of the time, against 4%
+   * out of a US movie, so a chain that wanders in tends to stay for a whole
+   * floor.
+   *
+   * Easy caps it; regular doesn't, since regular's pool is 35% non-US by
+   * design and capping there would distort the mode rather than fix a
+   * complaint about it.
+   */
+  maxNonUSPerFloor: number;
 }
 
 /**
@@ -167,6 +183,7 @@ export const MODE_CONFIG: Record<Mode, ModeConfig> = {
     hint: true,
     preferConnectionTypes: ['same_director', 'same_series'],
     matchDecoyRecognizability: true,
+    maxNonUSPerFloor: 2,
   },
   regular: {
     label: 'REGULAR',
@@ -176,6 +193,7 @@ export const MODE_CONFIG: Record<Mode, ModeConfig> = {
     hint: false,
     preferConnectionTypes: [],
     matchDecoyRecognizability: true,
+    maxNonUSPerFloor: 0,
   },
 };
 
@@ -240,6 +258,8 @@ export interface Movie {
   imdbId: string | null;
   /** Wikipedia sitelink count -- recognizability proxy, see MovieRow. */
   sitelinks: number;
+  /** Whether the United States is one of the film's countries. */
+  isUS: boolean;
 }
 
 export interface Round {
@@ -329,6 +349,10 @@ export class ModeEngine {
     return this.base.sitelinks(id);
   }
 
+  isUS(id: number): boolean {
+    return this.base.isUS(id);
+  }
+
   /** How many movies are playable in this mode (not the dataset total). */
   get poolSize(): number {
     return this.pool.length;
@@ -345,6 +369,39 @@ export class ModeEngine {
     // excluded every playable movie, which would need a >3,700-round run in
     // easy; returning something is still better than looping forever.
     return available.length > 0 ? randomOf(available) : randomOf(this.pool);
+  }
+
+  /**
+   * Build a round, relaxing constraints in order rather than dead-ending.
+   *
+   * A dead end used to leave the run stuck on a board with no playable
+   * move -- measured at 135 of 300 simulated runs, sometimes as early as
+   * the second pick, because `exclude` grows for the whole run and easy's
+   * pool is only ~1,800 movies. Rather than end someone's run on an engine
+   * limitation, the constraints are dropped one at a time, weakest promise
+   * first:
+   *
+   *   1. Everything asked for (no repeats, all caps respected).
+   *   2. Same, but caps ignored -- a repeated franchise beats a dead end.
+   *   3. Allow revisiting movies from earlier in the run, excluding only
+   *      what's currently on the board. The chain stays truthful (every
+   *      link is still a real connection); a movie can just appear twice.
+   *
+   * Returns null only if even (3) fails, which means this movie has no
+   * playable connection at all and the caller should restart from a new
+   * one.
+   */
+  buildRoundWithFallback(
+    movieId: number,
+    history: Set<number>,
+    onBoard: Set<number>,
+    options: { blockSeriesLinks?: boolean; blockDirectorLinks?: boolean; blockNonUS?: boolean }
+  ): Round | null {
+    return (
+      this.buildRound(movieId, history, options) ??
+      this.buildRound(movieId, history, {}) ??
+      this.buildRound(movieId, onBoard, {})
+    );
   }
 
   /**
@@ -451,7 +508,11 @@ export class ModeEngine {
   buildRound(
     movieId: number,
     exclude?: Set<number>,
-    options?: { blockSeriesLinks?: boolean; blockDirectorLinks?: boolean },
+    options?: {
+      blockSeriesLinks?: boolean;
+      blockDirectorLinks?: boolean;
+      blockNonUS?: boolean;
+    },
     maxAttempts = 200
   ): Round | null {
     const excludeSet = new Set(exclude ?? []);
@@ -462,6 +523,14 @@ export class ModeEngine {
     if (connected.size === 0) return null;
 
     let correctPool = [...connected];
+
+    // Keep the chain from settling into a run of non-US cinema once a floor
+    // has had its share (see maxNonUSPerFloor). Like every other steer here
+    // it yields rather than dead-ends if nothing US is available.
+    if (options?.blockNonUS) {
+      const usOnly = correctPool.filter((id) => this.isUS(id));
+      if (usOnly.length > 0) correctPool = usOnly;
+    }
 
     const blockedTypes: string[] = [];
     if (options?.blockSeriesLinks) blockedTypes.push('same_series');
@@ -575,8 +644,12 @@ export class MovieLadder {
   }
 
   movie(id: number): Movie {
-    const [title, year, wikidataId, imdbId, sitelinks] = this.movies[id];
-    return { title, year, wikidataId, imdbId, sitelinks };
+    const [title, year, wikidataId, imdbId, sitelinks, isUS] = this.movies[id];
+    return { title, year, wikidataId, imdbId, sitelinks, isUS: isUS === 1 };
+  }
+
+  isUS(id: number): boolean {
+    return this.movies[id][5] === 1;
   }
 
   /** Recognizability proxy for one movie; see MovieRow's sitelinks note. */
