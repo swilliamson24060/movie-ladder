@@ -61,6 +61,7 @@ export default function TutorialScreen({
           phase === 'betting-intro' ||
           phase === 'betting-offer' ||
           phase === 'betting-round' ||
+          phase === 'betting-lose-round' ||
           phase === 'done') && <Text style={styles.body}>{COPY[phase].body}</Text>}
       </ScrollView>
 
@@ -71,6 +72,7 @@ export default function TutorialScreen({
         phase === 'betting-intro' ||
         phase === 'betting-offer' ||
         phase === 'betting-round' ||
+        phase === 'betting-lose-round' ||
         phase === 'done') && (
         <Pressable style={styles.button} onPress={advance}>
           <Text style={styles.buttonText}>{COPY[phase].button}</Text>
@@ -102,6 +104,24 @@ export default function TutorialScreen({
             '1/5 strikes used. Miss five and the run ends — more on that shortly.',
           ]}
           button={COPY['explain-wrong'].button}
+          onAdvance={advance}
+        />
+      )}
+
+      {phase === 'betting-lose' && (
+        <ExplainModal
+          title={COPY['betting-lose'].title!}
+          lines={[
+            'The Matrix doesn’t connect to Jackie Brown by anything in the data. The correct movie, Jurassic Park, has been placed on the ladder for you — the chain keeps moving either way.',
+            '',
+            'Jurassic Park connects to Jackie Brown by:',
+            ...formatMatches(script.loseRound).map((l) => `• ${l}`),
+            '',
+            'The bet is lost, and that costs you twice over: this floor’s completion bonus is gone entirely, and every wrong answer on the floor — including this one — subtracts double the tile’s value instead of scoring it.',
+            '',
+            '2/5 strikes used. A lost bet costs points, not extra strikes — a miss is still worth one strike whether you bet or not.',
+          ]}
+          button={COPY['betting-lose'].button}
           onAdvance={advance}
         />
       )}
@@ -276,6 +296,44 @@ function Board({
       </>
     );
   }
+  if (phase === 'betting-lose-round' || phase === 'betting-lose') {
+  return (
+      <>
+        {/* Jackie Brown is now on the board -- the winning bet pick placed
+            it -- and the same bet floor is still running. */}
+        <LadderStack
+          movies={asStack([
+            script.pulpFiction,
+            script.killBill1,
+            script.killBill2,
+            script.jackieBrown,
+          ])}
+        />
+        <Text style={styles.betRoundBanner}>
+          💰 BET FLOOR — ZERO STRIKES DOUBLES THIS FLOOR’S COMPLETION BONUS
+        </Text>
+        {prompt(script.loseRound)}
+        <View style={styles.candidates}>
+          {[
+            { id: script.jurassicPark, state: 'bet' as const },
+            // The scripted wrong pick: marked red once it's been "tapped".
+            {
+              id: script.theMatrix,
+              state: (phase === 'betting-lose' ? 'wrong' : 'bet') as 'wrong' | 'bet',
+            },
+            { id: script.shawshank, state: 'bet' as const },
+          ].map(({ id, state }) => {
+            const movie = m(id);
+            return (
+              <View key={id} style={styles.candidateSlot}>
+                <MovieCell title={movie.title} year={movie.year} state={state} compact />
+              </View>
+            );
+          })}
+        </View>
+      </>
+    );
+  }
   if (phase === 'done') {
     return (
       <LadderStack
@@ -284,6 +342,7 @@ function Board({
           script.killBill1,
           script.killBill2,
           script.jackieBrown,
+          script.jurassicPark,
         ])}
       />
     );

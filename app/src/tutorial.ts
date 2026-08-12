@@ -27,6 +27,8 @@ export type Phase =
   | 'betting-offer'
   | 'betting-round'
   | 'betting-win'
+  | 'betting-lose-round'
+  | 'betting-lose'
   | 'done';
 
 export const PHASE_ORDER: Phase[] = [
@@ -40,6 +42,8 @@ export const PHASE_ORDER: Phase[] = [
   'betting-offer',
   'betting-round',
   'betting-win',
+  'betting-lose-round',
+  'betting-lose',
   'done',
 ];
 
@@ -110,9 +114,18 @@ export interface TutorialScript {
   jackieBrown: number;
   titanic: number;
   soundOfMusic: number;
+  // Lost-bet demo, continuing the same bet floor past Jackie Brown. The
+  // correct answer connects via Samuel L. Jackson -- deliberately a
+  // recognizable name, since a tutorial connection nobody could place
+  // would teach the opposite of what easy mode is for. Both decoys are
+  // verified zero-connection to Jackie Brown across all six types.
+  jurassicPark: number;
+  theMatrix: number;
+  shawshank: number;
   correctRound1: Record<string, string[]>; // Pulp Fiction -> Kill Bill 1
   correctRound2: Record<string, string[]>; // Kill Bill 1 -> Kill Bill 2
   betRound: Record<string, string[]>; // Kill Bill 2 -> Jackie Brown
+  loseRound: Record<string, string[]>; // Jackie Brown -> Jurassic Park
 }
 
 export function buildTutorialScript(game: MovieLadder, engine: ModeEngine): TutorialScript {
@@ -126,6 +139,9 @@ export function buildTutorialScript(game: MovieLadder, engine: ModeEngine): Tuto
   const jackieBrown = findMovie(game, 'Jackie Brown', 1997);
   const titanic = findMovie(game, 'Titanic', 1997);
   const soundOfMusic = findMovie(game, 'The Sound of Music', 1965);
+  const jurassicPark = findMovie(game, 'Jurassic Park', 1993);
+  const theMatrix = findMovie(game, 'The Matrix', 1999);
+  const shawshank = findMovie(game, 'The Shawshank Redemption', 1994);
 
   return {
     pulpFiction,
@@ -138,6 +154,9 @@ export function buildTutorialScript(game: MovieLadder, engine: ModeEngine): Tuto
     jackieBrown,
     titanic,
     soundOfMusic,
+    jurassicPark,
+    theMatrix,
+    shawshank,
     // Mode-scoped deliberately: in easy mode the tutorial must not teach a
     // connection type that mode doesn't count (all three scripted pairs
     // also match on screenwriter, which easy excludes). Verified that every
@@ -147,6 +166,7 @@ export function buildTutorialScript(game: MovieLadder, engine: ModeEngine): Tuto
     correctRound1: engine.connectionsBetween(pulpFiction, killBill1),
     correctRound2: engine.connectionsBetween(killBill1, killBill2),
     betRound: engine.connectionsBetween(killBill2, jackieBrown),
+    loseRound: engine.connectionsBetween(jackieBrown, jurassicPark),
   };
 }
 
@@ -259,6 +279,16 @@ const COPY: CopyBook = {
     title: 'Correct!',
     body: '', // filled in per-round from formatMatches()
     button: 'NEXT ▶',
+  },
+  'betting-lose-round': {
+    body:
+      'A bet rides on the whole floor, not just one pick — so it isn’t safe yet. Let’s get this one wrong on purpose and see what a lost bet actually costs.',
+    button: 'SEE WHAT HAPPENS ▶',
+  },
+  'betting-lose': {
+    title: 'Not quite.',
+    body: '', // filled in per-round
+    button: 'CONTINUE ▶',
   },
   done: {
     body:

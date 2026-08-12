@@ -44,6 +44,8 @@ type Phase =
   | "betting-offer"      // live preview of the real BET / NO THANKS screen
   | "betting-round"      // scripted: gold-marked candidates, correct one wins
   | "betting-win"        // modal, connection breakdown + bet payout
+  | "betting-lose-round" // scripted: same bet floor, player misses on purpose
+  | "betting-lose"       // modal, the bet-loss penalty
   | "done"               // chain review + explains the 5-strike game-over
 ```
 
@@ -389,3 +391,50 @@ per correct answer plus a flat +10 for a clean floor), the bet-loss penalty
 (bonus forfeited, every wrong answer costs double), the 5-strike limit, the
 4-floor chapter checkpoint (+2 per unused strike, new chain, strikes do not
 reset), and easy mode's three connection types and category hint.
+
+
+## Lost-bet demo added (2026-08-08)
+
+The tutorial demonstrated a bet being *won* but only described losing one
+in prose — and the loss is the half with the real consequences (completion
+bonus forfeited, every wrong answer on the floor costing double). Two
+phases now show it, continuing the same bet floor rather than starting a
+new scene:
+
+**betting-lose-round** — Board shows the four-tile chain (Pulp Fiction →
+Kill Bill Vol. 1 → Kill Bill Vol. 2 → Jackie Brown), the bet banner still
+up, and three gold candidates: **Jurassic Park (1993)** (correct), **The
+Matrix (1999)**, **The Shawshank Redemption (1994)**. Scripted so the demo
+player taps The Matrix.
+
+> A bet rides on the whole floor, not just one pick — so it isn't safe yet.
+> Let's get this one wrong on purpose and see what a lost bet actually
+> costs.
+
+**betting-lose** — modal:
+
+> **Not quite.** The Matrix doesn't connect to Jackie Brown by anything in
+> the data. The correct movie, Jurassic Park, has been placed on the ladder
+> for you — the chain keeps moving either way.
+>
+> Jurassic Park connects to Jackie Brown by:
+> - Same cast member — Samuel L. Jackson
+>
+> The bet is lost, and that costs you twice over: this floor's completion
+> bonus is gone entirely, and every wrong answer on the floor — including
+> this one — subtracts double the tile's value instead of scoring it.
+>
+> 2/5 strikes used. A lost bet costs points, not extra strikes — a miss is
+> still worth one strike whether you bet or not.
+
+**Why these movies.** The correct answer connects via **Samuel L. Jackson**,
+chosen deliberately over closer alternatives: the first candidate found
+(The Dark Knight) connects to Jackie Brown through *Tommy Lister Jr.*,
+which is exactly the unspottable-cast-member problem easy mode exists to
+avoid — teaching with it would undercut the mode. Both decoys are verified
+zero-connection to Jackie Brown across all six types, in both modes, and
+all three clear easy's ≥40 sitelink floor (Jurassic Park 99, The Matrix
+114, Shawshank 107).
+
+The `done` phase's closing chain review now includes Jurassic Park, since
+the missed round placed it.

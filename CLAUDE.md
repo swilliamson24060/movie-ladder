@@ -1359,6 +1359,14 @@ the full spec, measurements and decided constraints:**
   sitelinks against the ≥30 floor in a real round), mode badge, CHANGE
   DIFFICULTY, quit/chain flows, and both leaderboards. Zero console
   errors. See section 5c for the itemized results.
+- [x] Lost-bet demo added to the tutorial (2026-08-08) — it showed a bet
+  being won but only described losing one in prose, which is the half with
+  real consequences. Two phases (`betting-lose-round`, `betting-lose`)
+  continue the same bet floor into a deliberate miss. Correct answer is
+  Jurassic Park via **Samuel L. Jackson**, picked over the closer match
+  (The Dark Knight, which connects through *Tommy Lister Jr.*) precisely
+  because an unspottable cast member would teach the opposite of what easy
+  mode is for. Decoys verified zero-connection in both modes.
 - [x] Full tutorial rules audit (2026-08-08) — every phase checked against
   the shipped constants. Fixed: the milestone phase claimed a floor needed
   5 correct picks *without a strike* to complete (it completes when the
