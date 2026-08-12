@@ -784,7 +784,34 @@ anything reused will need to be ported/duplicated, not imported.
 
 ---
 
-## 5c. Difficulty modes — Easy vs. Regular (built 2026-08-08)
+## 5c. Difficulty modes — Easy (default) and Expert (unlocked)
+
+**Restructured 2026-08-08, late:** the two modes are no longer a choice a
+new player makes. Everyone starts in **Easy** with no difficulty question
+asked; **Expert** (the mode previously called Regular, rules unchanged) is
+unlocked by scoring **300 in a single run**, and only then does a mode
+picker appear at all. The reasoning: the picker used to be the very first
+screen, and asking someone to rate their own film knowledge before they've
+seen a single round is a question they have no basis to answer.
+
+Implementation notes worth not re-deriving:
+- `EXPERT_UNLOCK_SCORE = 300` and the unlock flag live in `App.tsx`, stored
+  under their own localStorage key (`movie-ladder:expert-unlocked`) rather
+  than in the save. It has to survive finishing a run, changing mode, and
+  the save being discarded by a version bump or dataset regeneration.
+- The unlock is driven by an effect watching `score`, not by hooking each
+  scoring site (tile points, floor bonus, chapter bonus, bet payout) —
+  one place to be right, and a future scoring rule can't miss it.
+- The mode key was renamed `regular` → `expert`. `normalizeMode()` maps the
+  old value so a run saved mid-flight isn't discarded over a rename, and
+  the leaderboard keeps **`highscores`** as expert's collection — those
+  scores were played under identical rules, so renaming the collection
+  would orphan them for nothing.
+- `CHANGE DIFFICULTY` and the mode-select screen only render once expert is
+  unlocked; before that there is nothing to choose.
+
+### (original section, still accurate for what each mode does)
+
 
 Goal: an Easy mode and a Regular mode. Three levers were chosen out of five
 options discussed. **All three plus the shared plumbing are now implemented**
@@ -1052,6 +1079,49 @@ in `connections.json` — appended last, so movie IDs are unchanged and saved
 games survive (verified: 0 rows shifted, 0 connection groups changed).
 Measured after: 33 of 22,820 easy floors exceed 2 non-US movies, all via
 the documented fallback.
+
+### Connections through people nobody has heard of (2026-08-08)
+
+A playtester was asked to link *Legends of the Fall* to *The Doors* through
+**Karina Lombard** — 3rd-billed in the first, a walk-on in the second.
+Verified: she is the *only* link between them, so the engine wasn't passing
+over a better one, and she is **not** obscure by our notability filter (32
+sitelinks, well past the cast floor of 15). Raising that floor enough to
+drop her would also cut plenty of legitimate connections.
+
+Root cause is the same as the Harrison Ford case in section 6: **Wikidata
+records no billing order** (P1545 coverage measured at 0 of 5 films), so
+3rd-credited and 70th-credited are indistinguishable in the data.
+
+**The usable proxy is how much someone works.** Lombard appears in 6 pool
+films; Brad Pitt in 59; the median connecting person in a real round, 33.
+`minConnectionGroupSize` (12) now steers the correct answer towards links
+through people above that bar — a connection group's size *is* that film
+count, so this needs no new data. Applied after the type preference, so a
+director link still beats a cast link and this only decides among equals.
+Measured over 5,000 rounds per mode:
+
+| | median films of the connecting person | rounds via someone with <12 films | the Lombard shape (≤6) |
+|---|---|---|---|
+| Easy, off | 28 | 17.9% | 6.6% |
+| Easy, on | 31 | 9.3% | 4.0% |
+| Expert, off | 32 | 12.2% | 3.6% |
+| Expert, on | 35 | **0.0%** | **0.0%** |
+
+Expert eliminates the shape; easy roughly halves it, because its 1,784-movie
+pool means the fallback (build the round anyway rather than dead-end) fires
+more often.
+
+**A real bug surfaced while measuring this.** The decoy invariant started
+failing — 169 per 6,000 easy rounds — and it traced back to the earlier
+change that freed decoys from the run-long history exclusion. `buildRound`
+removed history from a single `connected` set and used that same set to
+exclude decoys, so every previously-visited connected movie silently became
+eligible as a decoy: **a decoy that genuinely connects to the current
+movie, i.e. a round with two right answers**. Fixed by keeping
+`connectedAll` (for decoy exclusion) separate from `connected` (for
+correct-answer eligibility). It was invisible before only because decoys
+used to inherit the history exclusion and skipped those movies anyway.
 
 ### Shared plumbing (built 2026-08-08)
 

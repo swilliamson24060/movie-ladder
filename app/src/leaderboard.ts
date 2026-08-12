@@ -55,14 +55,14 @@ import type { Mode } from './movieLadder';
 export const LEADERBOARD_SIZE = 10;
 
 /**
- * Regular deliberately keeps the original `highscores` name so every score
- * submitted before difficulty modes existed stays on the regular board --
- * those were all played under regular's rules. Renaming it would orphan
- * them. See the module docs for why this is a collection split rather than
- * a `mode` field.
+ * See the module docs for why this is a collection split rather than a
+ * `mode` field.
  */
 const COLLECTION_BY_MODE: Record<Mode, string> = {
-  regular: 'highscores',
+  // Expert keeps the original 'highscores' name. It was called "regular"
+  // until 2026-08-08 and its scores were played under identical rules, so
+  // renaming the collection would orphan them for no gain.
+  expert: 'highscores',
   easy: 'highscores_easy',
 };
 

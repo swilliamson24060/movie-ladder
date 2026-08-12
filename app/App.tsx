@@ -4,12 +4,13 @@ import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, Vi
 
 import connectionsData from './assets/data/connections.json';
 import {
-  isMode,
+  DEFAULT_MODE,
   Mode,
   MODE_CONFIG,
   MODES,
   ModeEngine,
   MovieLadder,
+  normalizeMode,
   Round,
 } from './src/movieLadder';
 import TutorialScreen from './src/TutorialScreen';
@@ -85,6 +86,32 @@ const MAX_DIRECTOR_LINKS_PER_FLOOR = 2;
 // chains too, so per-tile value keeps climbing (floor 5 = 25/tile).
 const FLOORS_PER_CHAPTER = 4;
 const POINTS_PER_REMAINING_STRIKE = 2;
+// Expert mode is earned, not offered (2026-08-08). Every player starts in
+// easy with no difficulty question asked; passing this score in a single run
+// unlocks expert permanently, and only then does a mode choice appear.
+// Rationale: the mode picker was the very first thing a new player met, and
+// asking someone to rate their own film knowledge before they've seen a
+// round is a question they have no basis to answer.
+const EXPERT_UNLOCK_SCORE = 300;
+// Kept out of the save so it survives finishing a run, changing mode, and
+// the save being discarded by a version bump or a dataset regeneration.
+const EXPERT_UNLOCKED_KEY = 'movie-ladder:expert-unlocked';
+
+function readExpertUnlocked(): boolean {
+  try {
+    return localStorage.getItem(EXPERT_UNLOCKED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function persistExpertUnlocked(): void {
+  try {
+    localStorage.setItem(EXPERT_UNLOCKED_KEY, 'true');
+  } catch {
+    // Storage unavailable -- expert just stays locked for this session.
+  }
+}
 
 function floorNumberFor(floorsCompleted: number): number {
   return floorsCompleted + 1; // 1-indexed: the floor currently in progress
@@ -227,7 +254,12 @@ function loadSavedGame(game: MovieLadder): SavedGame | null {
     // storage, or a mode removed in a later version) is discarded rather
     // than coerced to a default -- resuming under the wrong ruleset is
     // exactly what the version bump above exists to prevent.
-    if (!isMode(parsed.mode)) return null;
+    // normalizeMode, not isMode: a run saved before expert was renamed
+    // carries mode 'regular', and discarding it would cost the player a run
+    // over a rename.
+    const mode = normalizeMode(parsed.mode);
+    if (!mode) return null;
+    parsed.mode = mode;
     if (!Array.isArray(parsed.stack) || parsed.stack.length === 0) return null;
     for (const [idStr, title] of Object.entries(parsed.titleCheck ?? {})) {
       const id = Number(idStr);
@@ -257,7 +289,12 @@ export default function App() {
   // teaches mode-specific rules and the engine builds mode-specific rounds.
   // A resumed run keeps the mode it was saved under; otherwise null until
   // the player picks, which is what shows the selector.
-  const [mode, setMode] = useState<Mode | null>(() => savedGame?.mode ?? null);
+  const [expertUnlocked, setExpertUnlocked] = useState(readExpertUnlocked);
+  // null means "ask which mode" -- which only ever happens once expert is
+  // unlocked. A new player goes straight into easy.
+  const [mode, setMode] = useState<Mode | null>(
+    () => savedGame?.mode ?? (readExpertUnlocked() ? null : DEFAULT_MODE)
+  );
   // Skip the tutorial on reload if there's a run to resume -- a returning
   // player doesn't need the walkthrough again just because they refreshed.
   const [showTutorial, setShowTutorial] = useState(() => savedGame === null);
@@ -273,6 +310,14 @@ export default function App() {
     }
     setSavedGame(null);
     setMode(null);
+  }
+
+  /** Called the moment a run crosses the unlock score. Persists immediately
+   * so the unlock survives even if the player closes the tab mid-run. */
+  function unlockExpert() {
+    if (expertUnlocked) return;
+    persistExpertUnlocked();
+    setExpertUnlocked(true);
   }
 
   function chooseMode(chosen: Mode) {
@@ -295,6 +340,8 @@ export default function App() {
           game={game}
           mode={mode}
           savedGame={savedGame}
+          expertUnlocked={expertUnlocked}
+          onUnlockExpert={unlockExpert}
           onChangeMode={changeMode}
         />
       )}
@@ -336,7 +383,8 @@ function ModeSelectScreen({
           );
         })}
         <Text style={styles.modeSelectFootnote}>
-          Each mode keeps its own high-score board, since the two aren’t comparable.
+          You unlocked EXPERT by scoring {EXPERT_UNLOCK_SCORE}. Each mode keeps its own
+          high-score board, since the two aren’t comparable.
         </Text>
       </ScrollView>
     </View>
@@ -347,11 +395,15 @@ function GameScreen({
   game,
   mode,
   savedGame,
+  expertUnlocked,
+  onUnlockExpert,
   onChangeMode,
 }: {
   game: MovieLadder;
   mode: Mode;
   savedGame: SavedGame | null;
+  expertUnlocked: boolean;
+  onUnlockExpert: () => void;
   onChangeMode: () => void;
 }) {
   // Every round-building call goes through the mode's engine, never the raw
@@ -482,6 +534,13 @@ function GameScreen({
   const [scoreSubmitted, setScoreSubmitted] = useState(() => savedGame?.scoreSubmitted ?? false);
   const [initials, setInitials] = useState('');
   const [submittingScore, setSubmittingScore] = useState(false);
+
+  // Watches the score rather than hooking each scoring site (tile points,
+  // floor bonus, chapter bonus, bet payout) -- one place to be right, and it
+  // can't be missed when a new scoring rule is added later.
+  useEffect(() => {
+    if (score >= EXPERT_UNLOCK_SCORE) onUnlockExpert();
+  }, [score, onUnlockExpert]);
 
   useEffect(() => {
     if (!gameOver || scoreSubmitted) return;
@@ -984,15 +1043,22 @@ function GameScreen({
             <Text style={styles.milestoneScore}>
               Final score: {score} ({MODE_CONFIG[mode].label})
             </Text>
+            {expertUnlocked && mode !== 'expert' && (
+              <Text style={styles.unlockLine}>
+                🔓 EXPERT MODE UNLOCKED — every movie, all six connection types, no hints
+              </Text>
+            )}
             <Pressable style={styles.button} onPress={restart}>
               <Text style={styles.buttonText}>PLAY AGAIN ▶</Text>
             </Pressable>
             {/* Switching difficulty is only offered between runs -- a run
                 can't change mode mid-flight (see SavedGame.mode), and the
                 run-over screen is the natural place to reconsider. */}
-            <Pressable style={styles.buttonSecondaryFull} onPress={onChangeMode}>
-              <Text style={styles.buttonSecondaryText}>CHANGE DIFFICULTY</Text>
-            </Pressable>
+            {expertUnlocked && (
+              <Pressable style={styles.buttonSecondaryFull} onPress={onChangeMode}>
+                <Text style={styles.buttonSecondaryText}>CHANGE DIFFICULTY</Text>
+              </Pressable>
+            )}
           </View>
         ) : milestone ? (
           <View style={styles.milestoneBanner}>
@@ -1021,6 +1087,9 @@ function GameScreen({
               {MAX_STRIKES - strikes === 1 ? '' : 's'} left ×{' '}
               {POINTS_PER_REMAINING_STRIKE}
             </Text>
+            {expertUnlocked && (
+              <Text style={styles.unlockLine}>🔓 EXPERT MODE UNLOCKED — choose it next run</Text>
+            )}
             <Text style={styles.betLine}>Bank these points and continue with a new chain?</Text>
             <Text style={styles.betLine}>
               A new chain starts from a fresh movie. Your score carries over and
@@ -1940,6 +2009,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
     flex: 1,
+  },
+  unlockLine: {
+    color: colors.yellow,
+    fontWeight: '800',
+    fontSize: 12,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 2,
   },
   boardHint: {
     color: colors.textSecondary,

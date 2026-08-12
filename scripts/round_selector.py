@@ -98,6 +98,16 @@ ACTIVE_CONNECTION_TYPES = {
 # Easy's floor was raised 30 -> 40 on 2026-08-08 after testers found easy
 # too hard: 40 keeps ~1,784 of 15,673 movies at a median degree of 84, and
 # lifts median candidate recognizability from 39 to 49 sitelinks.
+# How many pool films someone must have worked on for a connection through
+# them to be preferred as the correct answer. A group's size IS that count,
+# so it stands in for "would a player have heard of them" -- the closest
+# usable proxy, since Wikidata records no billing order (P1545 coverage
+# measured at 0 of 5 films). Tuned against a reported case: Karina Lombard
+# links Legends of the Fall to The Doors but appears in only 6 pool films,
+# where the median connecting person appears in ~33. Mirrors
+# MIN_PROLIFIC_GROUP in app/src/movieLadder.ts.
+MIN_PROLIFIC_GROUP = 12
+
 MODE_CONFIG = {
     "easy": {
         "min_sitelinks": 40,  # raised from 30 (2026-08-08, testers found easy too hard)
@@ -115,14 +125,18 @@ MODE_CONFIG = {
         # because non-US directors' and casts' filmographies are themselves
         # non-US -- so a chain that wanders in tends to stay for a whole floor.
         "max_non_us_per_floor": 2,
+        "min_connection_group_size": MIN_PROLIFIC_GROUP,
     },
-    "regular": {
+    # Renamed from "regular" 2026-08-08, when easy became the default mode
+    # and this became something the player unlocks by scoring 300.
+    "expert": {
         "min_sitelinks": 0,
         "connection_types": set(ACTIVE_CONNECTION_TYPES),
         "hint": False,
         "prefer_connection_types": [],
         "match_decoy_recognizability": True,
-        # No cap: regular's pool is 35% non-US by design, so capping would
+        "min_connection_group_size": MIN_PROLIFIC_GROUP,
+        # No cap: expert's pool is 35% non-US by design, so capping would
         # distort the mode rather than fix a complaint about it.
         "max_non_us_per_floor": 0,
     },
@@ -134,6 +148,7 @@ MODE_CONFIG = {
 # band around a famous film still yields mostly less-famous decoys and leaves
 # the tell in place (measured: 41% vs the 33% chance baseline).
 DECOY_RANK_WINDOW = 200
+
 
 # Naming this type in a hint would give the answer away rather than narrow
 # the search (a franchise is usually obvious from the title alone), so a
@@ -306,6 +321,20 @@ class MovieLadder:
                 or self.build_round(movie_id, rng=rng, exclude=history)
                 or self.build_round(movie_id, rng=rng, exclude=on_board))
 
+    def prolific_mates(self, movie_id, min_size):
+        """Movies reachable through a connection group of at least min_size
+        members -- i.e. through someone who worked on that many pool films.
+        Mirrors prolificMates() in movieLadder.ts."""
+        mates = set()
+        for conn_type, values in self._movie_values.get(movie_id, {}).items():
+            for value in values:
+                group = self.connections[conn_type][value]
+                if len(group) < min_size:
+                    continue
+                mates |= self._pool_set & set(group)
+        mates.discard(movie_id)
+        return mates
+
     def mates_of_type(self, movie_id, conn_type):
         """Every movie in the pool sharing a connection of one type with this
         one. Used both to cap hops of a type and to steer towards one.
@@ -338,7 +367,13 @@ class MovieLadder:
         rng = rng or random
         exclude = set(exclude or set()) | {movie_id}
 
-        connected = self.connected_ids(movie_id) - exclude
+        # connected_all is every link; connected is what's still eligible as
+        # the correct answer. Decoys must be checked against connected_all --
+        # subtracting history from a single set would let a
+        # previously-visited connected movie appear as a decoy, i.e. a round
+        # with two right answers. Mirrors the same fix in movieLadder.ts.
+        connected_all = self.connected_ids(movie_id)
+        connected = connected_all - exclude
         if not connected:
             return None
 
@@ -368,9 +403,16 @@ class MovieLadder:
             if preferred_pool:
                 correct_pool = preferred_pool
 
+        # Last, so it narrows within whatever the type preference left.
+        min_group = self.config.get("min_connection_group_size", 0)
+        if min_group:
+            prolific = correct_pool & self.prolific_mates(movie_id, min_group)
+            if prolific:
+                correct_pool = prolific
+
         correct_id = rng.choice(sorted(correct_pool))
 
-        decoy_exclude = exclude | connected | {correct_id}
+        decoy_exclude = exclude | connected_all | {correct_id}
         decoy_source = self._pool
         if self.config["match_decoy_recognizability"]:
             rank = self._rank.get(correct_id, 0)

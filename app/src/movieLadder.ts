@@ -26,7 +26,15 @@ export type MovieRow = [string, number | null, string, string | null, number, nu
 // positions) are unchanged, which keeps existing saved games valid; see the
 // note in connections_generator.py.
 
-export type Mode = 'easy' | 'regular';
+/**
+ * 'expert' was called 'regular' until 2026-08-08, when easy became the
+ * default mode every player starts in and the old regular was reframed as
+ * something you unlock. The key was renamed with it; saved games and
+ * leaderboard rows written under the old name are mapped across rather than
+ * discarded (see App.tsx's loadSavedGame and leaderboard.ts's collection
+ * map).
+ */
+export type Mode = 'easy' | 'expert';
 
 export interface ModeConfig {
   label: string;
@@ -46,7 +54,7 @@ export interface ModeConfig {
   minSitelinks: number;
   /**
    * Connection types that count as "these two movies are connected" in this
-   * mode. Regular uses all six active types; easy keeps only the ones a
+   * mode. Expert uses all six active types; easy keeps only the ones a
    * player can plausibly know off the top of their head, dropping
    * screenwriter and composer.
    *
@@ -59,7 +67,7 @@ export interface ModeConfig {
   /**
    * Connection types to steer the correct answer towards when the current
    * movie offers a choice. Empty = no steering (the correct answer is drawn
-   * uniformly from everything connected, which is what regular does).
+   * uniformly from everything connected, which is what expert does).
    *
    * Easy prefers director and franchise links for three separate reasons,
    * all measured:
@@ -90,7 +98,7 @@ export interface ModeConfig {
    * which pushed "correct answer is the most recognizable of the three" to
    * 40% and handed the player a "just pick the one you know" strategy.
    *
-   * Regular turned out to need it too, contradicting an earlier note in
+   * Expert turned out to need it too, contradicting an earlier note in
    * CLAUDE.md that declared the tell absent at 34% vs 33% by chance. That
    * figure came from a 400-round sample; at 4,000 rounds the real numbers
    * are 41-44% strictly most-famous against 21-23% strictly least, whether
@@ -101,8 +109,8 @@ export interface ModeConfig {
    *
    * Trade-off worth knowing: matched decoys are equally obscure, so a player
    * can no longer eliminate a candidate purely because they've never heard
-   * of it. That makes regular marginally harder as well as fairer. Flip this
-   * to false for regular to restore the old behaviour.
+   * of it. That makes expert marginally harder as well as fairer. Flip this
+   * to false for expert to restore the old behaviour.
    */
   matchDecoyRecognizability: boolean;
   /**
@@ -116,11 +124,29 @@ export interface ModeConfig {
    * out of a US movie, so a chain that wanders in tends to stay for a whole
    * floor.
    *
-   * Easy caps it; regular doesn't, since regular's pool is 35% non-US by
+   * Easy caps it; expert doesn't, since expert's pool is 35% non-US by
    * design and capping there would distort the mode rather than fix a
    * complaint about it.
    */
   maxNonUSPerFloor: number;
+  /**
+   * Minimum size of the connection group a correct answer should be reached
+   * through, or 0 to not care. A group's size IS how many pool films that
+   * person worked on, so this is a direct proxy for "would a player have
+   * heard of them".
+   *
+   * Added after a playtester was asked to link Legends of the Fall to The
+   * Doors through Karina Lombard -- 3rd-billed in the first, a walk-on in
+   * the second. She isn't obscure by our notability filter (32 sitelinks,
+   * well past the cast floor of 15); she's just in 6 pool films against
+   * Brad Pitt's 59. Wikidata has no billing order (P1545 coverage measured
+   * at 0 of 5 films), so role size can't be read directly -- how much
+   * someone works is the closest usable stand-in.
+   *
+   * A preference, not a filter: when nothing prolific is available the
+   * round is still built from what's there.
+   */
+  minConnectionGroupSize: number;
 }
 
 /**
@@ -174,6 +200,14 @@ const EASY_CONNECTION_TYPES = ['same_director', 'shared_cast_member', 'same_seri
  */
 const EASY_MIN_SITELINKS = 40;
 
+/**
+ * How many pool films a person must have worked on for a connection through
+ * them to be preferred. Tuned against the reported case: Karina Lombard has
+ * 6, which should lose; the median connecting person in a real round has
+ * ~33, which should win comfortably.
+ */
+const MIN_PROLIFIC_GROUP = 12;
+
 export const MODE_CONFIG: Record<Mode, ModeConfig> = {
   easy: {
     label: 'EASY',
@@ -185,24 +219,37 @@ export const MODE_CONFIG: Record<Mode, ModeConfig> = {
     preferConnectionTypes: ['same_director', 'same_series'],
     matchDecoyRecognizability: true,
     maxNonUSPerFloor: 2,
+    minConnectionGroupSize: MIN_PROLIFIC_GROUP,
   },
-  regular: {
-    label: 'REGULAR',
+  expert: {
+    label: 'EXPERT',
     blurb:
-      'Every movie in the dataset, all six kinds of connection, and you’re never told which one links them.',
+      'Every movie in the dataset, all six kinds of connection, and you’re never told which one links them. Unlocked by scoring 300.',
     minSitelinks: 0,
     connectionTypes: new Set(REGULAR_CONNECTION_TYPES),
     hint: false,
     preferConnectionTypes: [],
     matchDecoyRecognizability: true,
     maxNonUSPerFloor: 0,
+    minConnectionGroupSize: MIN_PROLIFIC_GROUP,
   },
 };
 
-export const MODES: Mode[] = ['easy', 'regular'];
+export const MODES: Mode[] = ['easy', 'expert'];
 
 export function isMode(value: unknown): value is Mode {
-  return value === 'easy' || value === 'regular';
+  return value === 'easy' || value === 'expert';
+}
+
+/** The mode every player starts in, and the only one available until
+ * expert is unlocked (see EXPERT_UNLOCK_SCORE in App.tsx). */
+export const DEFAULT_MODE: Mode = 'easy';
+
+/** Maps a mode name read from storage, tolerating the pre-rename value so a
+ * run or a leaderboard entry saved as 'regular' still resolves. */
+export function normalizeMode(value: unknown): Mode | null {
+  if (value === 'regular') return 'expert';
+  return isMode(value) ? value : null;
 }
 
 /**
@@ -414,7 +461,7 @@ export class ModeEngine {
    * Needed because the pool filter creates dead ends that don't exist in the
    * full dataset: a movie whose only connections are to movies below the
    * sitelink floor has zero playable connections (1.4% of easy's pool vs.
-   * 0.4% of regular's). Those can only ever be hit as a *starting* movie --
+   * 0.4% of expert's). Those can only ever be hit as a *starting* movie --
    * any movie reached as a correct answer necessarily has a connection to
    * the movie it was reached from, and that one is in the pool by
    * construction.
@@ -508,6 +555,27 @@ export class ModeEngine {
     return mates;
   }
 
+  /**
+   * Every movie reachable from this one through a connection group of at
+   * least `minSize` members -- i.e. through someone who worked on that many
+   * pool films. Used to steer away from links through people a player has
+   * little chance of knowing; see minConnectionGroupSize.
+   */
+  prolificMates(movieId: number, minSize: number): Set<number> {
+    const mates = new Set<number>();
+    const byType = this.movieValues.get(movieId);
+    if (!byType) return mates;
+    for (const [connType, values] of byType.entries()) {
+      for (const value of values) {
+        const group = this.connections[connType][value];
+        if (group.length < minSize) continue;
+        for (const id of group) if (this.poolSet.has(id)) mates.add(id);
+      }
+    }
+    mates.delete(movieId);
+    return mates;
+  }
+
   /** Franchise-mates specifically; see matesOfType. */
   seriesMates(movieId: number): Set<number> {
     return this.matesOfType(movieId, 'same_series');
@@ -555,7 +623,20 @@ export class ModeEngine {
     const excludeSet = new Set(exclude ?? []);
     excludeSet.add(movieId);
 
-    const connected = this.connectedIds(movieId);
+    // Two sets, and the difference matters. `connectedAll` is everything
+    // linked to this movie; `connected` is only what's still eligible as the
+    // correct answer once the run's history is excluded.
+    //
+    // Decoys must be checked against connectedAll, NOT connected. Removing
+    // history from a single shared set (as this did until the decoy pool was
+    // freed from the history exclusion) quietly made every
+    // previously-visited connected movie eligible as a decoy -- a decoy that
+    // genuinely connects to the current movie, i.e. a round with two right
+    // answers. Caught by the decoy invariant at 169 failures per 6,000 easy
+    // rounds; it was invisible before because decoys used to inherit the
+    // history exclusion and so skipped those movies anyway.
+    const connectedAll = this.connectedIds(movieId);
+    const connected = new Set(connectedAll);
     for (const id of excludeSet) connected.delete(id);
     if (connected.size === 0) return null;
 
@@ -590,6 +671,15 @@ export class ModeEngine {
       if (preferredPool.length > 0) correctPool = preferredPool;
     }
 
+    // Applied last, so it narrows within whatever the type preference left
+    // rather than competing with it: a director link is still preferred
+    // over a cast link, but among equals the better-known person wins.
+    if (this.config.minConnectionGroupSize > 0) {
+      const prolific = this.prolificMates(movieId, this.config.minConnectionGroupSize);
+      const prolificPool = correctPool.filter((id) => prolific.has(id));
+      if (prolificPool.length > 0) correctPool = prolificPool;
+    }
+
     const correctId = randomOf(correctPool);
 
     // Decoys: anything in the pool that is NOT connected to the current
@@ -599,7 +689,7 @@ export class ModeEngine {
     // decoys -- not the run's whole history. See the decoyExclude option.
     const decoyExclude = new Set(options?.decoyExclude ?? []);
     decoyExclude.add(movieId);
-    for (const id of connected) decoyExclude.add(id);
+    for (const id of connectedAll) decoyExclude.add(id);
     decoyExclude.add(correctId);
 
     // Decoys are matched to the correct answer's recognizability rather than

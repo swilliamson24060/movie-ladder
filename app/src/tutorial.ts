@@ -191,7 +191,7 @@ const INTRO_TLDR: Record<Mode, string[]> = {
     '',
     'That’s the whole game. Tap SKIP ✕ above to start playing, or read on for scoring, bets and checkpoints.',
   ],
-  regular: [
+  expert: [
     'THE SHORT VERSION',
     '• Three movies. Exactly one connects to the movie on top of the board.',
     '• The link is a shared director, cast member, writer, composer, award or franchise — you’re not told which.',
@@ -204,7 +204,7 @@ const INTRO_TLDR: Record<Mode, string[]> = {
 
 /**
  * The detail half of the intro. The connection-type list has to match the
- * mode actually being played -- easy counts only three of the six types, so
+ * mode actually being played -- easy counts only three of the six types (expert counts all six), so
  * listing all six would teach a rule the game isn't using. Everything else
  * in the script is mode-independent (the scoring, betting and strike rules
  * are identical in both modes -- see CLAUDE.md section 5c, which
@@ -221,7 +221,7 @@ const INTRO_DETAIL: Record<Mode, string[]> = {
     '• Shared cast member',
     '• Same franchise/series',
     '',
-    'Easy mode sticks to well-known movies, and — unlike REGULAR — it never makes you guess which kind of link you’re hunting for. Every round names the category in the prompt above the three movies:',
+    'Easy mode sticks to well-known movies, and — unlike EXPERT — it never makes you guess which kind of link you’re hunting for. Every round names the category in the prompt above the three movies:',
     '   “WHICH MOVIE SHARES A DIRECTOR WITH THE TOP TILE?”',
     '   “WHICH MOVIE SHARES A CAST MEMBER WITH THE TOP TILE?”',
     'So you never have to check all three kinds at once — just the one it asks for.',
@@ -230,7 +230,7 @@ const INTRO_DETAIL: Record<Mode, string[]> = {
     '',
     'Movies range from 1950 to 2026.',
   ],
-  regular: [
+  expert: [
     'IN FULL',
     'Every ladder starts with one movie already on the board. Your job: keep picking movies that connect to the one on top, for as long as you can.',
     '',
@@ -252,7 +252,7 @@ const INTRO_DETAIL: Record<Mode, string[]> = {
 
 const INTRO_BODY: Record<Mode, string> = {
   easy: [...INTRO_TLDR.easy, '', ...INTRO_DETAIL.easy].join('\n'),
-  regular: [...INTRO_TLDR.regular, '', ...INTRO_DETAIL.regular].join('\n'),
+  expert: [...INTRO_TLDR.expert, '', ...INTRO_DETAIL.expert].join('\n'),
 };
 
 /**
@@ -263,7 +263,7 @@ const INTRO_BODY: Record<Mode, string> = {
 const PICK_CORRECT_BODY: Record<Mode, string> = {
   easy:
     'Each round shows you three movies. Exactly one connects to the movie on top of your stack — the other two share nothing with it at all. The prompt above the movies names the category to look for. Here, Kill Bill: Volume 1 (highlighted) is the right pick.',
-  regular:
+  expert:
     'Each round shows you three movies. Exactly one connects to the movie on top of your stack — the other two share nothing with it at all. Here, Kill Bill: Volume 1 (highlighted) is the right pick.',
 };
 
@@ -276,11 +276,11 @@ export function buildCopy(mode: Mode): CopyBook {
 
 const COPY: CopyBook = {
   intro: {
-    body: INTRO_BODY.regular,
+    body: INTRO_BODY.expert,
     button: 'NEXT ▶',
   },
   'pick-correct': {
-    body: PICK_CORRECT_BODY.regular,
+    body: PICK_CORRECT_BODY.expert,
     button: 'NEXT ▶',
   },
   'explain-correct': {
