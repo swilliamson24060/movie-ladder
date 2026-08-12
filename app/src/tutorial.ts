@@ -18,6 +18,7 @@ import { Mode, MODE_CONFIG, ModeEngine, MovieLadder } from './movieLadder';
 
 export type Phase =
   | 'intro'
+  | 'intro-detail'
   | 'pick-correct'
   | 'explain-correct'
   | 'pick-wrong'
@@ -33,6 +34,7 @@ export type Phase =
 
 export const PHASE_ORDER: Phase[] = [
   'intro',
+  'intro-detail',
   'pick-correct',
   'explain-correct',
   'pick-wrong',
@@ -189,7 +191,7 @@ const INTRO_TLDR: Record<Mode, string[]> = {
     '• Right earns points. Wrong costs a strike, and the correct movie goes on the board anyway.',
     '• Five strikes ends the run.',
     '',
-    'That’s the whole game. Tap SKIP ✕ above to start playing, or read on for scoring, bets and checkpoints.',
+    'Tap SKIP ✕ above to start playing. If you want a full walkthrough of everything in the game, click “NEXT” below.',
   ],
   expert: [
     'THE SHORT VERSION',
@@ -198,7 +200,7 @@ const INTRO_TLDR: Record<Mode, string[]> = {
     '• Right earns points. Wrong costs a strike, and the correct movie goes on the board anyway.',
     '• Five strikes ends the run.',
     '',
-    'That’s the whole game. Tap SKIP ✕ above to start playing, or read on for scoring, bets and checkpoints.',
+    'Tap SKIP ✕ above to start playing. If you want a full walkthrough of everything in the game, click “NEXT” below.',
   ],
 };
 
@@ -251,8 +253,14 @@ const INTRO_DETAIL: Record<Mode, string[]> = {
 };
 
 const INTRO_BODY: Record<Mode, string> = {
-  easy: [...INTRO_TLDR.easy, '', ...INTRO_DETAIL.easy].join('\n'),
-  expert: [...INTRO_TLDR.expert, '', ...INTRO_DETAIL.expert].join('\n'),
+  easy: INTRO_TLDR.easy.join('\n'),
+  expert: INTRO_TLDR.expert.join('\n'),
+};
+
+/** Page two: the same rules at length, for a player who tapped NEXT. */
+const INTRO_DETAIL_BODY: Record<Mode, string> = {
+  easy: INTRO_DETAIL.easy.join('\n'),
+  expert: INTRO_DETAIL.expert.join('\n'),
 };
 
 /**
@@ -270,13 +278,21 @@ const PICK_CORRECT_BODY: Record<Mode, string> = {
 export type CopyBook = Record<Phase, { title?: string; body: string; button: string }>;
 
 export function buildCopy(mode: Mode): CopyBook {
-  return { ...COPY, intro: { ...COPY.intro, body: INTRO_BODY[mode] },
-    'pick-correct': { ...COPY['pick-correct'], body: PICK_CORRECT_BODY[mode] } };
+  return {
+    ...COPY,
+    intro: { ...COPY.intro, body: INTRO_BODY[mode] },
+    'intro-detail': { ...COPY['intro-detail'], body: INTRO_DETAIL_BODY[mode] },
+    'pick-correct': { ...COPY['pick-correct'], body: PICK_CORRECT_BODY[mode] },
+  };
 }
 
 const COPY: CopyBook = {
   intro: {
     body: INTRO_BODY.expert,
+    button: 'NEXT ▶',
+  },
+  'intro-detail': {
+    body: INTRO_DETAIL_BODY.expert,
     button: 'NEXT ▶',
   },
   'pick-correct': {

@@ -55,6 +55,7 @@ export default function TutorialScreen({
           <Board phase={phase} script={script} game={game} mode={mode} />
         </View>
         {(phase === 'intro' ||
+          phase === 'intro-detail' ||
           phase === 'pick-correct' ||
           phase === 'pick-wrong' ||
           phase === 'milestone' ||
@@ -66,6 +67,7 @@ export default function TutorialScreen({
       </ScrollView>
 
       {(phase === 'intro' ||
+        phase === 'intro-detail' ||
         phase === 'pick-correct' ||
         phase === 'pick-wrong' ||
         phase === 'milestone' ||
@@ -188,7 +190,7 @@ function Board({
   // the 4 hand-verified movies from TUTORIAL_FLOW.md are ever placed --
   // the remaining slot of the 5-tile group stays as empty grid cells rather
   // than inventing a title for movie 5.
-  if (phase === 'intro') {
+  if (phase === 'intro' || phase === 'intro-detail') {
     return <LadderStack movies={asStack([script.pulpFiction])} />;
   }
   if (phase === 'pick-correct' || phase === 'explain-correct') {
