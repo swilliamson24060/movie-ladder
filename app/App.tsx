@@ -5,6 +5,7 @@ import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, Vi
 import connectionsData from './assets/data/connections.json';
 import {
   DEFAULT_MODE,
+  EXPERT_UNLOCK_SCORE,
   Mode,
   MODE_CONFIG,
   MODES,
@@ -86,13 +87,10 @@ const MAX_DIRECTOR_LINKS_PER_FLOOR = 2;
 // chains too, so per-tile value keeps climbing (floor 5 = 25/tile).
 const FLOORS_PER_CHAPTER = 4;
 const POINTS_PER_REMAINING_STRIKE = 2;
-// Expert mode is earned, not offered (2026-08-08). Every player starts in
-// easy with no difficulty question asked; passing this score in a single run
-// unlocks expert permanently, and only then does a mode choice appear.
-// Rationale: the mode picker was the very first thing a new player met, and
-// asking someone to rate their own film knowledge before they've seen a
-// round is a question they have no basis to answer.
-const EXPERT_UNLOCK_SCORE = 300;
+// Expert mode is earned, not offered (2026-08-08): every player starts in
+// easy with no difficulty question asked, and passing EXPERT_UNLOCK_SCORE in
+// a single run unlocks expert permanently. The score itself lives in
+// movieLadder.ts so the mode blurb that quotes it can't drift.
 // Kept out of the save so it survives finishing a run, changing mode, and
 // the save being discarded by a version bump or a dataset regeneration.
 const EXPERT_UNLOCKED_KEY = 'movie-ladder:expert-unlocked';

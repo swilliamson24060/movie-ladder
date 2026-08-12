@@ -208,6 +208,18 @@ const EASY_MIN_SITELINKS = 40;
  */
 const MIN_PROLIFIC_GROUP = 12;
 
+/**
+ * Score in a single run that unlocks expert mode. Lives here rather than in
+ * App.tsx so the number and the copy that quotes it can't drift apart --
+ * the mode blurb below interpolates it.
+ *
+ * Raised 300 -> 500 on 2026-08-08: 300 arrives early in the second floor at
+ * escalating rates, so nearly anyone who finished a couple of floors would
+ * have unlocked it, making it a formality rather than something earned.
+ * Untested against real players either way.
+ */
+export const EXPERT_UNLOCK_SCORE = 500;
+
 export const MODE_CONFIG: Record<Mode, ModeConfig> = {
   easy: {
     label: 'EASY',
@@ -224,7 +236,7 @@ export const MODE_CONFIG: Record<Mode, ModeConfig> = {
   expert: {
     label: 'EXPERT',
     blurb:
-      'Every movie in the dataset, all six kinds of connection, and you’re never told which one links them. Unlocked by scoring 300.',
+      `Every movie in the dataset, all six kinds of connection, and you’re never told which one links them. Unlocked by scoring ${EXPERT_UNLOCK_SCORE}.`,
     minSitelinks: 0,
     connectionTypes: new Set(REGULAR_CONNECTION_TYPES),
     hint: false,
@@ -242,8 +254,9 @@ export function isMode(value: unknown): value is Mode {
 }
 
 /** The mode every player starts in, and the only one available until
- * expert is unlocked (see EXPERT_UNLOCK_SCORE in App.tsx). */
+ * expert is unlocked. */
 export const DEFAULT_MODE: Mode = 'easy';
+
 
 /** Maps a mode name read from storage, tolerating the pre-rename value so a
  * run or a leaderboard entry saved as 'regular' still resolves. */

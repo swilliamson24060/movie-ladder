@@ -789,13 +789,19 @@ anything reused will need to be ported/duplicated, not imported.
 **Restructured 2026-08-08, late:** the two modes are no longer a choice a
 new player makes. Everyone starts in **Easy** with no difficulty question
 asked; **Expert** (the mode previously called Regular, rules unchanged) is
-unlocked by scoring **300 in a single run**, and only then does a mode
+unlocked by scoring **500 in a single run**, and only then does a mode
 picker appear at all. The reasoning: the picker used to be the very first
 screen, and asking someone to rate their own film knowledge before they've
 seen a single round is a question they have no basis to answer.
 
 Implementation notes worth not re-deriving:
-- `EXPERT_UNLOCK_SCORE = 300` and the unlock flag live in `App.tsx`, stored
+- `EXPERT_UNLOCK_SCORE = 500` lives in `movieLadder.ts`, not `App.tsx`, so
+  the expert mode-select blurb can interpolate it and the number can't drift
+  from the copy quoting it. Raised from 300 the same day: 300 arrives early
+  in the second floor at escalating rates, so nearly anyone finishing a
+  couple of floors would unlock it, making it a formality rather than
+  something earned. Untested against real players either way. The unlock
+  flag lives in `App.tsx`, stored
   under their own localStorage key (`movie-ladder:expert-unlocked`) rather
   than in the save. It has to survive finishing a run, changing mode, and
   the save being discarded by a version bump or dataset regeneration.
