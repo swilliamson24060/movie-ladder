@@ -171,16 +171,48 @@ export function buildTutorialScript(game: MovieLadder, engine: ModeEngine): Tuto
 }
 
 /**
- * The intro's connection-type list has to match the mode actually being
- * played -- easy counts only three of the six types, so listing all six
- * would teach a rule the game isn't using. Built per mode rather than
- * hardcoded for that reason; everything else in the script is
- * mode-independent (the scoring, betting and strike rules are identical in
- * both modes -- see CLAUDE.md section 5c, which deliberately scoped the
- * modes to *which rounds get built*, not to the run's economy).
+ * The intro opens with a TL;DR so a player who doesn't want a walkthrough
+ * can read five lines, hit SKIP, and still know how to play. Everything
+ * after it is detail -- the same rules stated at length, plus the live
+ * demo rounds that follow.
+ *
+ * The summary has to stay genuinely short to be worth having; if a rule
+ * can't be stated in one line it belongs in the detail section or in a
+ * later phase, not here.
  */
-const INTRO_BODY: Record<Mode, string> = {
+const INTRO_TLDR: Record<Mode, string[]> = {
   easy: [
+    'THE SHORT VERSION',
+    '• Three movies. Exactly one connects to the movie on top of the board.',
+    '• In EASY, that link is a shared director, cast member, or franchise — and we tell you which to look for.',
+    '• Right earns points. Wrong costs a strike, and the correct movie goes on the board anyway.',
+    '• Five strikes ends the run.',
+    '',
+    'That’s the whole game. Tap SKIP ✕ above to start playing, or read on for scoring, bets and checkpoints.',
+  ],
+  regular: [
+    'THE SHORT VERSION',
+    '• Three movies. Exactly one connects to the movie on top of the board.',
+    '• The link is a shared director, cast member, writer, composer, award or franchise — you’re not told which.',
+    '• Right earns points. Wrong costs a strike, and the correct movie goes on the board anyway.',
+    '• Five strikes ends the run.',
+    '',
+    'That’s the whole game. Tap SKIP ✕ above to start playing, or read on for scoring, bets and checkpoints.',
+  ],
+};
+
+/**
+ * The detail half of the intro. The connection-type list has to match the
+ * mode actually being played -- easy counts only three of the six types, so
+ * listing all six would teach a rule the game isn't using. Everything else
+ * in the script is mode-independent (the scoring, betting and strike rules
+ * are identical in both modes -- see CLAUDE.md section 5c, which
+ * deliberately scoped the modes to *which rounds get built*, not to the
+ * run's economy).
+ */
+const INTRO_DETAIL: Record<Mode, string[]> = {
+  easy: [
+    'IN FULL',
     'Every ladder starts with one movie already on the board. Your job: keep picking movies that connect to the one on top, for as long as you can.',
     '',
     'In EASY mode, connections come from:',
@@ -193,8 +225,9 @@ const INTRO_BODY: Record<Mode, string> = {
     '💡 Tap any movie already on the board to see its details — who directed it, who was in it, and what it shares with the movie below it.',
     '',
     'Movies range from 1950 to 2026.',
-  ].join('\n'),
+  ],
   regular: [
+    'IN FULL',
     'Every ladder starts with one movie already on the board. Your job: keep picking movies that connect to the one on top, for as long as you can.',
     '',
     'Connections come from:',
@@ -210,7 +243,12 @@ const INTRO_BODY: Record<Mode, string> = {
     '💡 Tap any movie already on the board to see its details — who directed it, who was in it, and what it shares with the movie below it.',
     '',
     'Movies range from 1950 to 2026.',
-  ].join('\n'),
+  ],
+};
+
+const INTRO_BODY: Record<Mode, string> = {
+  easy: [...INTRO_TLDR.easy, '', ...INTRO_DETAIL.easy].join('\n'),
+  regular: [...INTRO_TLDR.regular, '', ...INTRO_DETAIL.regular].join('\n'),
 };
 
 /**

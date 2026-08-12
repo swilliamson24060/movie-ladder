@@ -438,3 +438,34 @@ all three clear easy's ≥40 sitelink floor (Jurassic Park 99, The Matrix
 
 The `done` phase's closing chain review now includes Jurassic Park, since
 the missed round placed it.
+
+
+## TL;DR added to the intro (2026-08-08)
+
+The tutorial is 13 phases and demonstrates a correct pick, a wrong pick, a
+won bet and a lost bet — thorough, but a lot to sit through before a first
+game. The intro now opens with a five-line summary so a player can read
+that, hit SKIP, and still know how to play:
+
+> THE SHORT VERSION
+> • Three movies. Exactly one connects to the movie on top of the board.
+> • The link is a shared director, cast member, writer, composer, award or
+>   franchise — you're not told which. *(Easy: director, cast or franchise,
+>   and it tells you which to look for.)*
+> • Right earns points. Wrong costs a strike, and the correct movie goes on
+>   the board anyway.
+> • Five strikes ends the run.
+>
+> That's the whole game. Tap SKIP ✕ above to start playing, or read on for
+> scoring, bets and checkpoints.
+
+Everything previously in the intro now sits below it under an "IN FULL"
+heading — same copy, just no longer the first thing a player meets.
+
+The summary is deliberately limited to what a player needs to take a first
+turn: the mechanic, the cost of a miss, and the run-ending condition.
+Scoring, bets and chapter checkpoints are all *discoverable in play* (the
+game announces each when it happens), so putting them in the summary would
+trade the thing that makes it useful — being short — for rules the player
+will meet anyway. If a rule can't be stated in one line, it belongs in the
+detail section, not here.
