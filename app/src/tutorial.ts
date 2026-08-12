@@ -170,6 +170,8 @@ const INTRO_BODY: Record<Mode, string> = {
     '',
     'Easy mode also sticks to well-known movies, and tells you which category to look for before each round — so you know whether you’re hunting for a director or a cast member.',
     '',
+    '💡 Tap any movie already on the board to see its details — who directed it, who was in it, and what it shares with the movie below it.',
+    '',
     'Movies range from 1950 to 2026.',
   ].join('\n'),
   regular: [
@@ -184,6 +186,8 @@ const INTRO_BODY: Record<Mode, string> = {
     '• Same franchise/series',
     '',
     'You don’t need to know which one applies — just that one exists.',
+    '',
+    '💡 Tap any movie already on the board to see its details — who directed it, who was in it, and what it shares with the movie below it.',
     '',
     'Movies range from 1950 to 2026.',
   ].join('\n'),
@@ -233,12 +237,12 @@ const COPY: CopyBook = {
   },
   milestone: {
     body:
-      'Land 5 correct movies in a row without a strike and the stack clears off the board, leaving just the top tile to keep building from. Scoring climbs every floor:\n• Floor 1 pays 5 points per correct movie, Floor 2 pays 10, Floor 3 pays 15 — 5 more per tile each floor (as you just saw)\n• Completing a floor pays a bonus too: 2 points per correct answer that floor, doubling to 4 on Floor 2, 6 on Floor 3 — 2 more per correct answer each floor. A miss doesn’t earn its share, even though the correct movie still gets placed for you.\n• Zero strikes on a floor adds +10 more on top of that floor’s bonus\n\nA strike anywhere in the floor still lets you finish it — you just miss out on the strike’s own bonus share and the +10.',
+      'Fill the board with 5 movies and the floor is complete: the stack clears off the board, leaving just the top tile to keep building from. Getting one wrong doesn’t stop a floor finishing — the correct movie is placed for you either way. Scoring climbs every floor:\n• Floor 1 pays 5 points per correct movie, Floor 2 pays 10, Floor 3 pays 15 — 5 more per tile each floor (as you just saw)\n• Completing a floor pays a bonus too: 2 points per correct answer that floor, doubling to 4 on Floor 2, 6 on Floor 3 — 2 more per correct answer each floor. A miss doesn’t earn its share, even though the correct movie still gets placed for you.\n• Zero strikes on a floor adds +10 more on top of that floor’s bonus\n\nA strike anywhere in the floor still lets you finish it — you just miss out on the strike’s own bonus share and the +10.',
     button: 'NEXT ▶',
   },
   'betting-intro': {
     body:
-      'Right after you clear a floor, you’ll sometimes get the option to bet — you can decline any time. Let’s see it in action.',
+      'Right after you clear a floor, you’ll usually get the option to bet — you can always decline. It’s skipped after your very first floor, at a 4-floor checkpoint, and whenever you’re too close to striking out to risk it. Let’s see it in action.',
     button: 'NEXT ▶',
   },
   'betting-offer': {

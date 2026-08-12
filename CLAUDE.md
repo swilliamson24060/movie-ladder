@@ -1359,6 +1359,17 @@ the full spec, measurements and decided constraints:**
   sitelinks against the ≥30 floor in a real round), mode badge, CHANGE
   DIFFICULTY, quit/chain flows, and both leaderboards. Zero console
   errors. See section 5c for the itemized results.
+- [x] Full tutorial rules audit (2026-08-08) — every phase checked against
+  the shipped constants. Fixed: the milestone phase claimed a floor needed
+  5 correct picks *without a strike* to complete (it completes when the
+  board fills, misses included, and the copy contradicted itself two
+  sentences later); the bet offer was described as merely "sometimes"
+  available when it's gated three specific ways (floor 1, chapter
+  checkpoints, and too few strikes left); and the betting-win modal quoted
+  "+5 points" for a tile, unreachable since betting never starts before
+  floor 3 where tiles are worth 15. Added the tap-a-tile hint to both intro
+  variants. `TUTORIAL_FLOW.md` carries the same changes plus an audit
+  record.
 - [x] `TUTORIAL_FLOW.md` betting/scoring copy resynced with the shipped
   tutorial (2026-08-08) — it had still described the pre-2026-08-01 betting
   rules (stake one strike, +10 win, −2 strikes loss) and the pre-escalation

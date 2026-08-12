@@ -74,6 +74,9 @@ framing since this is an open-ended run, not a bounded path). Copy:
 >
 > You don't need to know which one applies — just that one exists.
 >
+> 💡 Tap any movie already on the board to see its details — who directed
+>   it, who was in it, and what it shares with the movie below it.
+>
 > Movies range from 1950 to 2026.
 
 That's regular mode's list. **Easy mode's intro lists only its three types
@@ -136,9 +139,10 @@ Button: "CONTINUE ▶"
 **milestone** — Board shows a mocked/animated preview of a 5-tile stack
 scrolling off-screen, leaving only the top tile. Copy:
 
-> Land 5 correct movies in a row without a strike and the stack clears off
-> the board, leaving just the top tile to keep building from. Scoring
-> climbs every floor:
+> Fill the board with 5 movies and the floor is complete: the stack clears
+> off the board, leaving just the top tile to keep building from. Getting
+> one wrong doesn't stop a floor finishing — the correct movie is placed
+> for you either way. Scoring climbs every floor:
 > - Floor 1 pays 5 points per correct movie, Floor 2 pays 10, Floor 3 pays
 >   15 — 5 more per tile each floor (as you just saw)
 > - Completing a floor pays a bonus too: 2 points per correct answer that
@@ -156,8 +160,10 @@ Button: "NEXT ▶"
 Vol. 1 → Kill Bill Vol. 2 stack from the milestone phase (not actually
 cleared/re-scrolled — no slide animation in the tutorial). Copy:
 
-> Right after you clear a group of 5, you'll sometimes get the option to
-> bet — you can decline any time. Let's see it in action.
+> Right after you clear a floor, you'll usually get the option to bet — you
+> can always decline. It's skipped after your very first floor, at a
+> 4-floor checkpoint, and whenever you're too close to striking out to risk
+> it. Let's see it in action.
 
 Button: "NEXT ▶"
 
@@ -203,8 +209,8 @@ Copy:
 > - Same cast member — Michael Bowen, Quentin Tarantino, Samuel L. Jackson
 > *(regular mode also shows: Same screenwriter — Quentin Tarantino)*
 >
-> +5 points, same as any correct pick. A real bet pays off separately, at
-> the end of the floor: finish the whole floor with zero strikes and its
+> The tile scores its normal value, same as any correct pick. A real bet
+> pays off separately, at the end of the floor: finish the whole floor with zero strikes and its
 > completion bonus doubles. Miss even once and the bet is lost — that
 > floor's completion bonus is forfeited and every wrong answer on it
 > subtracts double its point value. Strikes still cost their normal amount
@@ -348,3 +354,38 @@ WRONG ANSWERS STILL COST DOUBLE THIS FLOOR"), since the gold "still
 winnable" marking switches off but the player remains exposed to the
 penalty. See CLAUDE.md section 5b for the implementation note on why
 `isBetFloor` now survives the first miss.
+
+
+## Rules audit, 2026-08-08
+
+Checked every phase's copy against the shipped constants and logic. Three
+things were wrong or missing and are now fixed in both this doc and
+`app/src/tutorial.ts`:
+
+1. **The milestone phase misstated how a floor completes.** It said "land 5
+   correct movies in a row *without a strike* and the stack clears," then
+   contradicted itself two sentences later with "a strike anywhere in the
+   floor still lets you finish it." A floor completes when the board fills
+   (`newStack.length >= MAX_STACK_TILES`), regardless of misses — the
+   correct movie is auto-placed either way. Only the bonuses depend on
+   getting them right.
+2. **The bet offer was described as merely "sometimes" available.** It's
+   gated three ways and now says so: skipped after floor 1
+   (`FLOORS_BEFORE_BETTING`), skipped at a 4-floor chapter checkpoint (the
+   chapter screen takes precedence), and blocked when fewer than
+   `MIN_STRIKES_LEFT_TO_BET` strikes remain.
+3. **The betting-win modal quoted "+5 points."** Betting is never offered
+   before floor 3, where a tile is worth 15, so that number was
+   unreachable in a real bet. The copy now describes the value instead of
+   naming it.
+
+Also added to both intro variants: a line teaching that placed tiles can be
+tapped for details, matching the feature ported from chart-ladder on the
+same day. The tutorial board itself stays non-interactive (it passes no
+`onSelect`), so the hint describes the real game rather than the demo.
+
+Verified accurate as of this audit: per-floor scoring (5×N per tile, 2×N
+per correct answer plus a flat +10 for a clean floor), the bet-loss penalty
+(bonus forfeited, every wrong answer costs double), the 5-strike limit, the
+4-floor chapter checkpoint (+2 per unused strike, new chain, strikes do not
+reset), and easy mode's three connection types and category hint.

@@ -113,7 +113,11 @@ export default function TutorialScreen({
             'Jackie Brown connects to Kill Bill: Volume 2 by:',
             ...formatMatches(script.betRound).map((l) => `• ${l}`),
             '',
-            '+5 points, same as any correct pick. A real bet pays off separately, at the end of the floor: finish the whole floor with zero strikes and its completion bonus doubles. Miss even once and the bet is lost — that floor’s completion bonus is forfeited and every wrong answer on it subtracts double its point value. Strikes still cost their normal amount either way.',
+            // Deliberately no number here: the demo board is floor 1, but a
+            // real bet is never offered before floor 3 (see
+            // FLOORS_BEFORE_BETTING), where a tile is worth 15 -- quoting
+            // "+5" would teach a value the player can never see on a bet.
+            'The tile scores its normal value, same as any correct pick. A real bet pays off separately, at the end of the floor: finish the whole floor with zero strikes and its completion bonus doubles. Miss even once and the bet is lost — that floor’s completion bonus is forfeited and every wrong answer on it subtracts double its point value. Strikes still cost their normal amount either way.',
           ]}
           button={COPY['betting-win'].button}
           onAdvance={advance}
