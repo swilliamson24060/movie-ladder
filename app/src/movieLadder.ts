@@ -177,7 +177,8 @@ const EASY_MIN_SITELINKS = 40;
 export const MODE_CONFIG: Record<Mode, ModeConfig> = {
   easy: {
     label: 'EASY',
-    blurb: 'Well-known movies, the most recognizable connections, and a hint naming the category.',
+    blurb:
+      'Well-known movies, the three most recognizable kinds of connection, and every round tells you which one to look for.',
     minSitelinks: EASY_MIN_SITELINKS,
     connectionTypes: new Set(EASY_CONNECTION_TYPES),
     hint: true,
@@ -187,7 +188,8 @@ export const MODE_CONFIG: Record<Mode, ModeConfig> = {
   },
   regular: {
     label: 'REGULAR',
-    blurb: 'Every movie in the dataset, all six connection types, no hints.',
+    blurb:
+      'Every movie in the dataset, all six kinds of connection, and you’re never told which one links them.',
     minSitelinks: 0,
     connectionTypes: new Set(REGULAR_CONNECTION_TYPES),
     hint: false,

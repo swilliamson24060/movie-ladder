@@ -469,3 +469,28 @@ game announces each when it happens), so putting them in the summary would
 trade the thing that makes it useful — being short — for rules the player
 will meet anyway. If a rule can't be stated in one line, it belongs in the
 detail section, not here.
+
+
+## Easy's hint made explicit (2026-08-08)
+
+Easy's category hint was mentioned three times in the intro but always as a
+trailing clause — "…and we tell you which to look for" — and the player
+never saw what the prompt actually looks like until their first real round.
+Since the hint is one of the three things that *make* easy easier, it now
+gets stated outright and shown:
+
+- Its own TL;DR bullet, quoting a real prompt: *"EASY tells you which one
+  to look for. The prompt above the movies says so outright — e.g. 'WHICH
+  MOVIE SHARES A DIRECTOR WITH THE TOP TILE?' — so you only have to check
+  that one thing."*
+- The IN FULL section quotes two prompt variants (director and cast
+  member) and contrasts them with REGULAR explicitly, so the difference
+  between the modes is legible from inside either one.
+- The mode-select blurbs were rewritten to match, since that screen is
+  where the choice is actually made: easy now reads "…every round tells you
+  which one to look for", regular "…you're never told which one links
+  them."
+
+The `pick-correct` phase already rendered the real prompt above its
+candidate row, so the tutorial demonstrates the hint as well as describing
+it.
