@@ -1167,6 +1167,38 @@ used to inherit the history exclusion and skipped those movies anyway.
   change mode mid-flight). The mode is also shown in the status bar at all
   times.
 
+### Verified in-browser, 2026-08-08 (late)
+
+Walked the whole restructure against a local `npm run web`, driving Chrome.
+Everything below was seen rendered, not just typechecked:
+
+- **A new player goes straight into easy** — no difficulty question — and
+  the tutorial's TL;DR renders above the detail section.
+- **Board tiles show the year**, starter included (the fix that prompted it).
+- **Tap-a-tile details** open with mode-scoped credits and correctly say a
+  starting movie has nothing below it to connect to.
+- **The lost-bet demo** plays through: gold bet floor, The Matrix marked
+  red, Samuel L. Jackson named as the missed link, 2/5 strikes, both costs
+  stated.
+- **Chapter checkpoint** at 4 floors, bonus arithmetic correct (3 strikes
+  left × 2 = +6), and BANK & CONTINUE starts a fresh chain.
+- **The chain review** shows ✓/✗/• marks, the "N movies · N correct · N
+  missed" summary, and a dotted **new chain** break with no connection line
+  across it.
+- **Expert unlock** fires on crossing 500, persists in localStorage,
+  announces itself on the RUN OVER banner, and the mode picker + CHANGE
+  DIFFICULTY only appear afterwards.
+- **Both leaderboards work** — the easy board now has real scores, so the
+  Firestore rules were published.
+
+**One bug found and fixed while doing it:** the quit modal announced
+"✅ Score saved!" after the player pressed SKIP. `scoreSubmitted` is
+deliberately set by both submitting and skipping (it means "don't ask
+again this run"), but the confirmation text was keyed off it, so a skipped
+score claimed to have been saved — confirmed against the live board, where
+the skipped 501 never appeared. Split out a `scoreSaved` flag set only by a
+real `submitScore()`; skipping now reads "Score not submitted."
+
 ### What shipped, and what's verified
 
 Files: `app/src/movieLadder.ts` (mode config + `ModeEngine`),

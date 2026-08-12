@@ -529,7 +529,14 @@ function GameScreen({
   // (including resuming straight into it after a reload), so it's derived
   // state rather than something persisted in the save itself.
   const [scoreQualifies, setScoreQualifies] = useState(false);
+  // "Don't ask again this run" -- set by BOTH submitting and skipping, since
+  // for prompting purposes they mean the same thing.
   const [scoreSubmitted, setScoreSubmitted] = useState(() => savedGame?.scoreSubmitted ?? false);
+  // Whether a score was ACTUALLY written to the leaderboard. Distinct from
+  // the flag above: reusing that one for the confirmation text made the quit
+  // modal announce "Score saved!" after a skip, which was simply untrue --
+  // caught in browser when a skipped 501 never appeared on the board.
+  const [scoreSaved, setScoreSaved] = useState(false);
   const [initials, setInitials] = useState('');
   const [submittingScore, setSubmittingScore] = useState(false);
 
@@ -689,6 +696,7 @@ function GameScreen({
     await submitScore(initials, score, mode);
     setSubmittingScore(false);
     setScoreSubmitted(true);
+    setScoreSaved(true);
   }
 
   // "Declining" reuses scoreSubmitted rather than a separate flag -- for
@@ -950,6 +958,7 @@ function GameScreen({
     setIsBetFloor(false);
     setScoreQualifies(false);
     setScoreSubmitted(false);
+    setScoreSaved(false);
     setInitials('');
     setSubmittingScore(false);
     setShowQuitModal(false);
@@ -1263,6 +1272,7 @@ function GameScreen({
           score={score}
           scoreQualifies={scoreQualifies}
           scoreSubmitted={scoreSubmitted}
+          scoreSaved={scoreSaved}
           initials={initials}
           onChangeInitials={setInitials}
           submitting={submittingScore}
@@ -1578,6 +1588,7 @@ function QuitModal({
   score,
   scoreQualifies,
   scoreSubmitted,
+  scoreSaved,
   initials,
   onChangeInitials,
   submitting,
@@ -1589,6 +1600,9 @@ function QuitModal({
   score: number;
   scoreQualifies: boolean;
   scoreSubmitted: boolean;
+  /** True only if the score really reached the leaderboard -- skipping sets
+   * scoreSubmitted but not this. */
+  scoreSaved: boolean;
   initials: string;
   onChangeInitials: (value: string) => void;
   submitting: boolean;
@@ -1639,7 +1653,11 @@ function QuitModal({
             </>
           )}
 
-          {scoreSubmitted && <Text style={[styles.modalLine, styles.centeredText]}>✅ Score saved!</Text>}
+          {scoreSaved ? (
+            <Text style={[styles.modalLine, styles.centeredText]}>✅ Score saved!</Text>
+          ) : scoreSubmitted && scoreQualifies ? (
+            <Text style={[styles.modalLine, styles.centeredText]}>Score not submitted.</Text>
+          ) : null}
 
           <Pressable style={styles.buttonSecondaryFull} onPress={onViewChain}>
             <Text style={styles.buttonSecondaryText}>🔗 VIEW FULL CHAIN</Text>
